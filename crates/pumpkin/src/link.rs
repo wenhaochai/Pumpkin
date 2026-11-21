@@ -641,6 +641,15 @@ pub(crate) fn command(digest: &Sha256Digest) -> String {
     )
 }
 
+/// The forced command of each key that the controller's admin lists under `member`: the client's
+/// own command, [`command`], which the shell runs with `pumpkin --member <member>` as its
+/// positional parameters.
+// One Unix user, and a forced command that names each key's user, as gitolite's keys do:
+// https://github.com/sitaramc/gitolite/blob/f073598c5dca815a5553cebaee3d2a3f7abcbaec/src/triggers/post-compile/ssh-authkeys#L127-L141
+pub(crate) fn forced(member: &Member) -> String {
+    format!("exec /bin/sh -c \"$SSH_ORIGINAL_COMMAND\" pumpkin --member {member}")
+}
+
 /// The script that installs the `tar` archive on standard input as the `serve` that [`command`]
 /// runs. Its files must match `manifest`. They are written into a directory of
 /// its own beside the installs, checked, made 0555 and renamed into place whole, so that no

@@ -28,6 +28,7 @@ use self::notes::{
     BUILD_NOTES, CANCEL_NOTES, CHECK_NOTES, CONFIG, CONTROLLER_NOTES, FMT_NOTES, HELP_NOTES,
     LS_NOTES, PUBLISH_NOTES, REAP_NOTES, RUN_NOTES, VIEW_NOTES, WAIT_NOTES,
 };
+use crate::controller::Name;
 use crate::ending::Printed;
 use crate::member::Member;
 use crate::publish::{Bucket, Since};
@@ -129,7 +130,8 @@ On the controller: `job` runs a job of the controller target, which `pumpkin
 run` and `pumpkin build` start there in a unit of its own; `boot` reaps what lost
 runs left, at the controller's boot, which `boot-all` runs for each installed
 build; `install` installs, as root, the host's software, whose units run
-`boot-all` and `idle`, the idle stop; `cancel` cancels a run for `pumpkin cancel`, on a client, which says the run's
+`boot-all`, `idle`, the idle stop, and `members`, which copies the members' keys;
+`cancel` cancels a run for `pumpkin cancel`, on a client, which says the run's
 ending from its copy of the record; `serve` answers, on its standard input and
 output, the client that follows a job, lists the runs or views them; and `publish` uploads the runs to the bucket
 of the public page.")]
@@ -177,12 +179,14 @@ writes.")]
     #[command(about = "Reap what lost runs left, at the controller's boot")]
     Boot,
     #[command(about = "Install the controller host's software, as root")]
-    #[command(long_about = INSTALL_ABOUT)]
-    Install,
+    #[command(long_about = INSTALL_ABOUT, after_help = INSTALL_NOTES)]
+    Install(Host),
     #[command(name = "boot-all", about = "Run each installed build's boot")]
     BootAll,
     #[command(about = "Stop the controller if it has been idle for 30 minutes")]
     Idle,
+    #[command(about = "Copy the members' keys, which sshd admits, from SSM")]
+    Members(Host),
     #[command(about = "Cancel a run for a client, which says its ending")]
     Cancel(Cancel),
     #[command(about = "Answer a client's link, on the standard input and output")]
@@ -206,9 +210,32 @@ Install, as root, what Pumpkin needs on the controller host, from this
 `pumpkin`, which its admin's release pins: the user `pumpkin`, lingering, in
 Docker's group; this `pumpkin` at /usr/local/sbin/pumpkin; the units that run
 each installed build's boot (`boot-all`) and stop the controller when idle
-(`idle`); and sshd's settings. It needs Docker installed first, and leaves
+(`idle`) and copy the members' keys from SSM every minute (`members`); and
+sshd's settings, which admit only those keys for `pumpkin`, each with a forced
+command that names its member. It copies the keys first, and changes nothing
+in sshd if it can't. It needs Docker and AWS CLI v2 installed first, and leaves
 the rest of what jobs run to the host's provisioner too. It writes each file whole, only where it differs, reloads only what
 changed, and says each change, so a second run says nothing.";
+
+const INSTALL_NOTES: &str = "\
+The members' list, SSM parameter /pumpkin-<name>/members, holds a line
+`<member> <key>` for each key: a member's name, 1 to 32 of a-z, 0-9 and `-`
+starting with a letter, and the line of their machine's
+~/.config/pumpkin/ssh/key.pub, an `ssh-ed25519` key with an optional comment.
+A list with any other line, or a key twice, is refused whole.";
+
+/// Which controller `pumpkin controller install` and `pumpkin controller members` are on.
+#[derive(Args)]
+pub(crate) struct Host {
+    #[arg(long, value_name = "name")]
+    #[arg(value_parser = |name: &str| Name::try_from(name.to_owned()))]
+    #[arg(help = "The `name` that deploy/aws was applied with.")]
+    pub(crate) name: Name,
+    #[arg(long, value_name = "region")]
+    #[arg(value_parser = |region: &str| Region::try_from(region.to_owned()))]
+    #[arg(help = "The region it was applied in.")]
+    pub(crate) region: Region,
+}
 
 const PUBLISH_ABOUT: &str = "\
 Upload the runs in --runs to an S3 bucket, from which a static copy of the
@@ -267,9 +294,10 @@ pub(crate) enum Command {
     View(View),
     Job(Job),
     Boot,
-    Install,
+    Install(Host),
     BootAll,
     Idle,
+    Members(Host),
     CancelFor(Cancel),
     Serve(Option<Member>),
     Publish(Publish),
@@ -744,8 +772,11 @@ fn command_of(cli: &mut clap::Command, parsed: Parsed) -> Result<Command, clap::
             action: Action::Boot,
         } => Command::Boot,
         Parsed::Controller {
-            action: Action::Install,
-        } => Command::Install,
+            action: Action::Install(host),
+        } => Command::Install(host),
+        Parsed::Controller {
+            action: Action::Members(host),
+        } => Command::Members(host),
         Parsed::Controller {
             action: Action::BootAll,
         } => Command::BootAll,
@@ -795,9 +826,10 @@ fn job_command(cli: &mut clap::Command, command: Vec<OsString>) -> Result<JobCom
         | Command::View(_)
         | Command::Job(_)
         | Command::Boot
-        | Command::Install
+        | Command::Install(_)
         | Command::BootAll
         | Command::Idle
+        | Command::Members(_)
         | Command::CancelFor(_)
         | Command::Serve(_)
         | Command::Publish(_)

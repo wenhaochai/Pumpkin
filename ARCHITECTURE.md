@@ -29,7 +29,7 @@ makes ops, such as a call of a function, and model requests. On the host, the ga
 session's end, the decision core decides what the run does next from what has happened, and the
 runtime carries out those decisions on the providers and keeps the run's record.
 
-A run is one process, the driver, on one machine: the operator's own, or the person's controller,
+A run is one process, the driver, on one machine: the operator's own, or a team's controller,
 an EC2 instance that runs the runs a machine sends it.
 
 ![The programs and machines of a run: the operator's pumpkin starts the driver on the operator's machine or on the controller; the driver's parts, the sandboxes that the providers create and the model provider that the route reaches.](docs/figures/run-machines.svg)
@@ -418,7 +418,7 @@ machine's configuration (`Config`, or `Client` for a machine whose runs go to a 
 reads a task's source below its root (`Root`) and serves the standard library's, and `driver`
 starts the driver process. `run` starts a run and drives it in that process, `ending` follows a run
 and says how it ended, and `reaping` stops runs and removes what they left. `controller` reaches
-the controller, which its `aws` finds, starts and enrols this machine's key with, over a direct SSH
+the controller, which its `aws` finds and starts, and which admits the keys its admin lists, over a direct SSH
 connection a command keeps for its requests (`Reached`). The workspace saves its address and
 serialises repairs. Its `send` sends a run's or a build's job, sharing large task uploads by digest
 across up to four connections before starting the job on the first. Its `copy` receives an ended record
@@ -434,7 +434,8 @@ its `store` admits complete uploads by their SHA-256. `job` is the controller's 
 `start` starts each id once under the jobs' lock and keeps the install its unit runs, with the
 prune and the slots that admit its builds and publishes
 (`Admission`), `host` is the host's software, which `controller install` installs as root and
-whose units run its boot and idle stop, `whole` replaces a file whole, `publish` copies the runs, as `view` exports them, to the public page's bucket as
+whose units run its boot and idle stop and copy the members' keys, each with a forced command
+that `link` makes, `whole` replaces a file whole, `publish` copies the runs, as `view` exports them, to the public page's bucket as
 their jobs run, `progress` is what `ls` shows, `next` makes the commands to run next, `style` runs
 the formatter, `view` serves the runs' records to a browser, its `json` the JSON forms of what it
 answers with, its `Answering` the view that `serve` keeps to answer a client's, and `Workspace` is
@@ -519,12 +520,13 @@ developer installs.
 
 ### `deploy/aws`
 
-The Terraform module that makes one person's Pumpkin on AWS, as [its README](deploy/aws/README.md)
+The Terraform module that makes one team's Pumpkin on AWS, whose members the admin lists by key,
+as [its README](deploy/aws/README.md)
 says: the EC2 envelope
 that `ec2` relies on, the repositories that runs push to, Modal's pull role, the sandboxes' AMI,
-and the controller, with the SSM parameter of its jobs' settings, whose first boot installs the
-packages its jobs run and then runs a pinned release's `controller install`. No crate depends on
-it; its outputs feed a machine's configuration.
+and the controller, with the SSM parameters of its jobs' settings and its members' keys, whose
+first boot installs the packages its jobs run and then runs a pinned release's `controller
+install`. No crate depends on it; its outputs feed a machine's configuration.
 
 ### `examples`
 
@@ -573,7 +575,8 @@ left behind, never a header's value.
 On the operator's machine, the driver reads the configuration and each key file itself, so no key
 crosses argv, the environment or a pipe; a machine sends its keys to the controller only on a
 connection's standard input, into its job's directory in tmpfs, which the job's unit removes as it
-ends.
+ends. The controller admits only the keys its admin lists, each with a forced command that names
+its member, and its `docker` group makes every member root there.
 
 ### Deadlines and spending bounds
 
@@ -694,6 +697,7 @@ of its own that it is handed as it connects. Outside it are only the configurati
 credentials, which it reads; the runs' records, where `--runs` names another directory; the files
 that `fmt` and `lock` rewrite, which their command lines name; the Docker engine's images and its
 ledger of CPUs, which every run on the engine shares; and the machine's key to its controllers,
+the member's credential, which their admin enrols,
 with the host keys it pinned. On a controller, below the controller user's home, as the `job`
 module lays out, the jobs also keep the store of the files that clients sent, the trees of links
 into it and each job's own directory, and its `.pumpkin` keeps the installs of `serve` that the

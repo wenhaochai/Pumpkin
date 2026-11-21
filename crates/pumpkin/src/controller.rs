@@ -78,6 +78,14 @@ impl TryFrom<String> for Name {
     }
 }
 
+impl Name {
+    /// The SSM parameter `/pumpkin-<name>/<leaf>` of this controller, as `deploy/aws` names
+    /// them.
+    pub(crate) fn parameter(&self, leaf: &str) -> String {
+        format!("/pumpkin-{self}/{leaf}")
+    }
+}
+
 impl fmt::Display for Name {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.0.fmt(f)
@@ -166,31 +174,27 @@ impl Reached {
         )
     }
 
-    fn repair(&self, previous: &Found, denied: bool, said: &str) -> Result<(Found, bool), String> {
-        let mut enrolled = false;
-        let found = self.location.repair(&self.name, Some(previous), || {
+    /// Why the controller refused this machine's key, and the line its admin adds to admit it.
+    fn key_refused(&self) -> Result<String, String> {
+        let public = self.kept.join("key.pub");
+        let line = fs::read_to_string(&public).context(public.display())?;
+        Ok(format!(
+            "controller `{}` refused this machine's key: ask its admin to add this line under \
+             your name in deploy/aws's `members`, and apply, or, if it is listed, run the command \
+             again in a minute, once the controller has copied the list: \"{}\"",
+            self.name,
+            line.trim_end()
+        ))
+    }
+
+    fn repair(&self, previous: &Found, said: &str) -> Result<Found, String> {
+        self.location.repair(&self.name, Some(previous), || {
             let probe = aws::answers(previous.at.address);
-            let at = find(&self.region, &self.name).map_err(|error| match probe {
+            find(&self.region, &self.name).map_err(|error| match probe {
                 Ok(()) => format!("{said}; finding the controller again: {error}"),
                 Err(probe) => format!("{said}; SSH at its last private address: {probe}: {}; finding the controller again: {error}", aws::unanswered(&probe)),
-            })?;
-            if denied && at.instance == previous.at.instance && at.address == previous.at.address {
-                let _enrol = self.enrolling()?;
-                let mut probe = self.ssh(&at, "true");
-                if bounded(&mut probe, "ssh", SHORT_TIMEOUT).is_err() {
-                    say(format_args!(
-                        "enrolling this machine's key, {}, with controller `{}`",
-                        self.kept.join("key.pub").display(),
-                        self.name
-                    ));
-                    self.push(&at)?;
-                    self.enrol(&at)?;
-                }
-                enrolled = true;
-            }
-            Ok(at)
-        })?;
-        Ok((found, enrolled))
+            })
+        })
     }
 
     fn ssh_command() -> Command {
@@ -201,12 +205,6 @@ impl Reached {
         ssh.args(self.ssh_options())
             .arg(format!("{USER}@{}", at.address))
             .arg(remote);
-    }
-
-    fn ssh(&self, at: &Located, remote: &str) -> Command {
-        let mut ssh = Self::ssh_command();
-        self.remote(&mut ssh, at, remote);
-        ssh
     }
 
     fn ssh_options(&self) -> Vec<String> {

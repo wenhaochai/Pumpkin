@@ -1,14 +1,14 @@
 # deploy/aws
 
-The Terraform module that makes one person's Pumpkin on AWS, which that person applies with their
-own administrator credentials, from their own machine. Every name it makes begins
-`pumpkin-<name>`, so teammates share an account without colliding, and its state is in an S3
-bucket of the account, so no laptop can lose it.
+The Terraform module that makes one team's Pumpkin on AWS, whose members its admin lists by key,
+and which the admin applies with administrator credentials. Every name it makes begins
+`pumpkin-<name>`, the team's name, so teams share an account without colliding, and its state is
+in an S3 bucket of the account, so no laptop can lose it.
 
 | What | Why |
 | --- | --- |
 | the sandboxes' security group: out to HTTPS and to the controller's ephemeral ports; nothing in | sandboxes pull from ECR and dial the gateway at port 0's pick, and reach nothing else |
-| the controller's security group: in from the sandboxes on the ephemeral ports, and from `ssh_from`, none by default, on port 22; out to HTTPS | the gateway, and `sshd` for the person's machine alone |
+| the controller's security group: in from the sandboxes on the ephemeral ports, and from `ssh_from`, none by default, on port 22; out to HTTPS | the gateway, and `sshd` for the members' machines alone |
 | ECR `pumpkin-<name>/roles` and `/sandboxd`, immutable tags, untagged images expire after 14 days | private images, pushed tagged by digest |
 | a launch template per class: the AMI, the type, IMDSv2 within one hop, a root volume deleted with the instance | the EC2 classes, and what the `ec2` provider relies on |
 | the sandboxes' role: ECR pulls only | each sandbox's pulls |
@@ -19,6 +19,7 @@ bucket of the account, so no laptop can lose it.
 | the controller: an on-demand instance on Ubuntu 24.04 LTS, with a public IPv4 address, IMDSv2 within one hop, an encrypted gp3 root, stopping on shutdown, tagged `pumpkin:controller=<name>`; an apply never replaces it | builds the tasks' images and runs the drivers, which a person's machine sends it, and runs no role |
 | what cloud-init installs there: Docker, which runs as root, so its `docker` group, which holds `pumpkin` alone, is root-equivalent; Buildx, AWS CLI v2 and uv at exact versions, and the rest of `controller.yaml`'s packages from a snapshot of Ubuntu's archive; then the Pumpkin release `pumpkin_release`, whose `pumpkin controller install` installs Pumpkin's part, which `pumpkin controller install --help` says: the user `pumpkin`, lingering; an `sshd` that admits concurrent openings and ends a session whose client has gone; a unit that stops the controller after 30 minutes with no job and no SSH session, and one that runs each registered build's reap at boot | builds with the containerd image store; jobs that outlive every connection; a stop and a reap that need no client |
 | the SSM parameter `/pumpkin-<name>/settings` (advanced tier): the Docker engine, the EC2 provider `aws`, and the Modal provider `modal`'s `images` | each job's settings, which an apply changes for the next job; the rest of the Modal provider is the client's |
+| the SSM parameter `/pumpkin-<name>/members` (advanced tier): a line `<member> <key>` for each key in `members`, which the controller copies every minute into `/etc/ssh/pumpkin/members`, each with a forced command that names its member, the only keys `sshd` admits for `pumpkin` | who may reach the controller, and whose each job is; an apply changes it within a minute |
 | with `public_page`: a private bucket `pumpkin-<name>-public-…` that a CloudFront distribution alone reads, and the controller's right to list it and upload to it | the public page, below |
 
 `ami.tf`, `controller.tf` and the other files say more of each. What the `ec2` provider requires
@@ -37,25 +38,29 @@ aws s3api put-bucket-versioning --bucket pumpkin-tfstate-<account>-<region> \
 aws iam create-open-id-connect-provider --url https://oidc.modal.com --client-id-list oidc.modal.com
 ```
 
-## Per person
+## Per team
 
 Terraform 1.11 or later, and the AWS CLI with administrator credentials for the account. In this
 directory, write `terraform.tfvars` (`variables.tf` says each value and its default):
 
 ```hcl
-name            = "alice"
+name            = "frontier"
 region          = "us-west-1"
 vpc_id          = "vpc-…"
 subnet_id       = "subnet-…"
 modal_workspace = "ac-…"
-client_roles    = ["alice-laptop"] # the IAM roles and users of the person's machine
+client_roles    = ["alice-laptop"] # the IAM roles and users of the members' machines
 client_users    = []
-ssh_from        = ["10.0.1.23/32"] # the person's machine's private address
+ssh_from        = ["10.0.1.23/32", "10.0.1.24/32"] # the members' machines' private addresses
+members = {
+  alice = ["ssh-ed25519 AAAA… alice-laptop", "ssh-ed25519 AAAA… alice-desk"]
+  bob   = ["ssh-ed25519 AAAA… bob"]
+}
 pumpkin_release = "v… <commit> <sha256>" # a release's `pumpkinversion` line
 ```
 
-`pumpkin` reaches the controller at its private address, so the person's machine is in the
-controller's VPC, or routed to it, and `ssh_from` admits it.
+`pumpkin` reaches the controller at its private address, so each member's machine is in the
+controller's VPC, or routed to it, and `ssh_from` admits it. A team of one lists its own key.
 
 Then:
 
@@ -69,9 +74,41 @@ terraform apply pumpkin.tfplan
 The first apply waits while Image Builder bakes the AMI on a build instance of its own. A
 concurrent `plan` or `apply` of the same state waits on its lock.
 
+## Members
+
+The controller admits a key only if `members` lists it, and names each job by the member whose key
+started it: `ls` and `view` show each run's member, and `cancel` stops only the member's own runs,
+and those that no member started, unless given `--any-member`. This prevents accidents, not
+members: each member's build runs as the controller's one user, `pumpkin`, whose `docker` group is
+root there.
+
+- **Enrol.** A machine's first `pumpkin` command makes its key, and the controller refuses it with
+  the line to send the admin, its `~/.config/pumpkin/ssh/key.pub`, which holds no secret. Add the
+  line under the member's name, a list item for each of their machines, and apply. The controller
+  refuses a list with a name that isn't 1 to 32 of a-z, 0-9 and `-` starting with a letter, a
+  line that isn't an `ssh-ed25519` key with an optional comment, or a key listed twice, keeping
+  the last list it took, and its journal says why: `journalctl -u pumpkin-members.service`.
+- **Revoke.** Remove the line and apply. The controller refuses the key within a minute. A
+  connection already open lasts until it ends: `serve` ends a link that asks nothing for a minute,
+  but an open `view` page asks every few seconds until it is closed.
+- **See the logins.** `sudo journalctl -u ssh --grep 'Accepted publickey for pumpkin'` on the
+  controller lists each login with its key's fingerprint, which `ssh-keygen -l -f
+  /etc/ssh/pumpkin/members` names by member.
+
+A controller made before `members` gets the parameter and the controller role's read of it from
+the apply, but nothing on the controller: its admin runs, once the apply has made
+`/pumpkin-<name>/members`, the install of a release that knows members, as "Changes" says. It
+copies the list first, and fails, changing nothing in `sshd`, if it can't; it then admits only
+those keys. Check, as the install leaves it, that `sudo ssh-keygen -l -f /etc/ssh/pumpkin/members`
+names each member's keys, and that `pumpkin ls` reaches it from a member's machine. The keys that
+members enrolled before, in `~pumpkin/.ssh/authorized_keys`, then reach it no more.
+
+`sshd` logs `AuthorizedKeysCommand path is not absolute` for each key that the list lacks, as it
+reads `none` as the command's path; the key is refused, as it should be.
+
 ## What the outputs feed
 
-- `terraform output -raw client_config` is the `[controller]` table of the person's
+- `terraform output -raw client_config` is the `[controller]` table of each member's
   `~/.config/pumpkin/pumpkin.toml`, beside its `[upstreams]` and, for runs on Modal,
   `[controller.modal]`, the Modal provider's profile and classes, and nothing else; `pumpkin help
   config` says what each does, with an example, and which programs the person's machine, Linux on
@@ -113,7 +150,7 @@ curl --fail --location --output pumpkin.tar.xz \
     https://github.com/FrontierCS/Pumpkin/releases/download/<tag>/pumpkin-<tag>-x86_64-unknown-linux-musl.tar.xz
 echo '<sha256>  pumpkin.tar.xz' | sha256sum --check --strict
 mkdir pumpkin && tar --extract --xz --file=pumpkin.tar.xz --directory=pumpkin
-sudo pumpkin/bin/pumpkin controller install
+sudo pumpkin/bin/pumpkin controller install --name <name> --region <region>
 ```
 
 Set `pumpkin_release` to that line too, which a controller made later installs at its first boot.

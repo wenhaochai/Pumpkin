@@ -1,8 +1,9 @@
 #cloud-config
 # The controller's first boot, on Ubuntu 24.04 LTS: what its jobs need, at the versions
 # controller.tf names, then the Pumpkin release that `pumpkin_release` pins, whose
-# `pumpkin controller install` installs what Pumpkin itself relies on there: its user, its units
-# and `sshd`'s settings. An admin upgrades them by running a later release's install.
+# `pumpkin controller install` installs what Pumpkin itself relies on there: its user, its units,
+# `sshd`'s settings and the members' keys. An admin upgrades them by running a later release's
+# install.
 
 # Over HTTPS, the one way out the controller's security group allows.
 apt:
@@ -52,7 +53,7 @@ runcmd:
     echo "$3  pumpkin.tar.xz" | sha256sum --check --strict
     mkdir pumpkin
     tar --extract --xz --file=pumpkin.tar.xz --directory=pumpkin
-    pumpkin/bin/pumpkin controller install
+    pumpkin/bin/pumpkin controller install --name ${name} --region ${region}
     curl --fail --silent --show-error --location --proto '=https' --output uv.tar.gz \
         https://github.com/astral-sh/uv/releases/download/${uv_version}/uv-x86_64-unknown-linux-gnu.tar.gz
     echo '${uv_sha256}  uv.tar.gz' | sha256sum --check --strict

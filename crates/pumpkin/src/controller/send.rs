@@ -37,7 +37,7 @@ const PROGRESS: Duration = Duration::from_secs(15);
 
 /// The name of the SSM parameter that holds the settings of the jobs of controller `name`.
 fn parameter(name: &Name) -> String {
-    format!("/pumpkin-{name}/settings")
+    name.parameter("settings")
 }
 
 /// A task's git repository, as this machine sends it to the controller.

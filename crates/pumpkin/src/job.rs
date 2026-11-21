@@ -374,6 +374,12 @@ struct Parameter {
     value: String,
 }
 
+/// The value of the SSM parameter `name`, which `cli` reads.
+pub(crate) fn parameter_value(cli: &Cli, name: &str) -> Result<String, String> {
+    let got: GotParameter = cli.json(&["ssm", "get-parameter", "--name", name], Bound::Call)?;
+    Ok(got.parameter.value)
+}
+
 /// A job's configuration, as TOML: the controller's settings, which `cli` reads from the SSM
 /// parameter `parameter`, with `[gateway] private` at the controller's private IPv4 address, port
 /// 0; each Modal provider as the client sent it, with the settings' `images`, `dials_from` at the
@@ -382,10 +388,9 @@ struct Parameter {
 ///
 /// Fails if the settings set `gateway` or `upstreams`, which each job sets.
 fn assemble(cli: &Cli, parameter: &str, sent: &Path) -> Result<String, String> {
-    let got: GotParameter =
-        cli.json(&["ssm", "get-parameter", "--name", parameter], Bound::Call)?;
+    let value = parameter_value(cli, parameter)?;
     let named = format!("the controller's settings, SSM parameter `{parameter}`,");
-    let mut tables: toml::Table = toml::from_str(&got.parameter.value)
+    let mut tables: toml::Table = toml::from_str(&value)
         .map_err(|error| format!("{named} aren't TOML: {}", error.to_string().trim_end()))?;
     let (private, public) = addresses()?;
     for key in ["gateway", "upstreams"] {

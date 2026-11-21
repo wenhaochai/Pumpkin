@@ -1,6 +1,6 @@
-# The person's controller, which builds the tasks' images and runs the drivers, and runs no role.
-# The person reaches it over ssh from `ssh_from`, and it stops itself when idle
-# (`pumpkin controller install`), so it costs only its volume between runs.
+# The team's controller, which builds the tasks' images and runs the drivers, and runs no role.
+# Its members reach it over ssh from `ssh_from`, each with a key that `members` lists, and it
+# stops itself when idle (`pumpkin controller install`), so it costs only its volume between runs.
 
 resource "aws_iam_role" "controller" {
   name        = "${local.prefix}-controller"
@@ -104,6 +104,25 @@ resource "aws_iam_role_policy" "controller_settings" {
   })
 }
 
+# The members' keys, a line `<member> <key>` for each key that `members` lists, which the
+# controller copies every minute into the keys that its `sshd` admits, each with the forced
+# command that names its member, as `pumpkin controller install` sets it up.
+resource "aws_ssm_parameter" "members" {
+  name  = "/${local.prefix}/members"
+  type  = "String"
+  tier  = "Advanced"
+  value = join("", flatten([for member, keys in var.members : [for key in keys : "${member} ${key}\n"]]))
+}
+
+resource "aws_iam_role_policy" "controller_members" {
+  name = "members"
+  role = aws_iam_role.controller.id
+  policy = jsonencode({
+    Version   = "2012-10-17"
+    Statement = [{ Effect = "Allow", Action = "ssm:GetParameter", Resource = aws_ssm_parameter.members.arn }]
+  })
+}
+
 # Canonical's Ubuntu 24.04 LTS, as its public parameter names the current release, whose Docker
 # comes from Docker's own repository, as builds need Docker 28 or later with the containerd
 # image store, and Buildx. An apply never replaces the controller for a newer release.
@@ -132,7 +151,12 @@ resource "aws_instance" "controller" {
     uv_version         = local.controller_versions.uv
     uv_sha256          = local.controller_versions.uv_sha256
     pumpkin_release    = var.pumpkin_release
+    name               = var.name
+    region             = var.region
   })
+
+  # The first boot's install reads the members' keys.
+  depends_on = [aws_iam_role_policy.controller_members]
 
   # Tokens required, within one hop, so that no build's container reaches the role.
   metadata_options {

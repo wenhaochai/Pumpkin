@@ -1,7 +1,7 @@
-//! Finding a controller's EC2 instance by its tag, starting it, waiting until its `sshd` answers
-//! at its private address, and enrolling this machine's key with it through EC2 Instance Connect.
+//! Finding a controller's EC2 instance by its tag, starting it, and waiting until its `sshd`
+//! answers at its private address.
 
-use std::fs::{self, DirBuilder, File};
+use std::fs::{self, DirBuilder};
 use std::net::{IpAddr, SocketAddr, TcpStream};
 use std::os::unix::fs::{DirBuilderExt as _, PermissionsExt as _};
 use std::path::{Path, PathBuf};
@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 use stdx::process::Environment;
 use stdx::{Context as _, Deadline};
 
-use super::{Name, Reached, SHORT_TIMEOUT, USER, bounded, finished, locked};
+use super::{Name, SHORT_TIMEOUT, bounded};
 use crate::say;
 
 // The tag that `deploy/aws` puts on the controller's instance, valued with the controller's name.
@@ -70,9 +70,10 @@ pub(super) struct Located {
 
 /// The directory that holds this machine's `ssh` key to its controllers, `key` and `key.pub`,
 /// which this makes if there is none, and `known_hosts`, which pins the host key that each
-/// controller showed first, by its [`Reached::alias`]. Processes may call it at once.
+/// controller showed first, by its [`Reached::alias`](super::Reached::alias). Processes may call
+/// it at once.
 // A credential, so beside the configuration, outside every workspace; one for the machine, so
-// that each controller enrols it once, whatever workspace reaches it.
+// that a controller's admin lists it once, whatever workspace reaches it.
 pub(super) fn kept() -> Result<PathBuf, String> {
     let home = env::var_os("HOME").filter(|home| !home.is_empty()).ok_or(
         "HOME is unset or empty: set it, as this machine's key to its controllers is below it",
@@ -269,46 +270,4 @@ pub(super) fn unanswered(error: &io::Error) -> &'static str {
 pub(super) fn answers(address: IpAddr) -> io::Result<()> {
     // The port of `sshd`, which `deploy/aws` admits.
     TcpStream::connect_timeout(&SocketAddr::new(address, 22), PROBE_TIMEOUT).map(drop)
-}
-
-impl Reached {
-    /// This machine's lock of enrolling its key, which one command holds at a time, so that
-    /// commands that find the key refused at once push it once and add it once.
-    // Beside the key, as one machine-wide lock guards SkyPilot's registration of its key:
-    // https://github.com/skypilot-org/skypilot/blob/052914aaccb29a9a2364dd73654f2e61f0af42a0/sky/authentication.py#L236-L243
-    pub(super) fn enrolling(&self) -> Result<File, String> {
-        let waiting = format_args!(
-            "waiting for another command, which is enrolling this machine's key with a controller"
-        );
-        locked(&self.kept.join("enrol"), waiting)
-    }
-
-    pub(super) fn enrol(&self, at: &Located) -> Result<(), String> {
-        let public = self.kept.join("key.pub");
-        let public = fs::read(&public).context(public.display())?;
-        let mut ssh = self.ssh(
-            at,
-            "umask 077 && mkdir --parents .ssh && cat >> .ssh/authorized_keys",
-        );
-        let fed = stdx::process::fed(&mut ssh, &public, Deadline::after(SHORT_TIMEOUT));
-        finished(fed, "ssh", SHORT_TIMEOUT).map(|_| ())
-    }
-
-    /// Pushes this machine's public key to the instance with EC2 Instance Connect, which accepts it
-    /// for a minute: the connection that uses it must begin within.
-    pub(super) fn push(&self, at: &Located) -> Result<(), String> {
-        let public = format!("file://{}", self.kept.join("key.pub").display());
-        let args = [
-            "ec2-instance-connect",
-            "send-ssh-public-key",
-            "--instance-id",
-            &at.instance,
-            "--instance-os-user",
-            USER,
-            "--ssh-public-key",
-            &public,
-        ];
-        let cli = Cli::connect(self.region.clone())?;
-        cli.run(&args, Bound::Call).map(|_| ())
-    }
 }

@@ -1,4 +1,4 @@
-# One person's Pumpkin on AWS. README.md says how to apply it, and what each output feeds.
+# One team's Pumpkin on AWS. README.md says how to apply it, and what each output feeds.
 
 data "aws_partition" "current" {}
 

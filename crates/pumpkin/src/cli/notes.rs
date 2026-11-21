@@ -340,7 +340,7 @@ pub(super) const CONTROLLER_NOTES: &str = "\
 Examples:
   cd ~/trees/tasks/20261108-000905-126a21e9 && pumpkin controller job 20261108-000905-126a21e9 --region us-west-1 --parameter /pumpkin-alice/settings --tree 5d0c5f0e83a3c40be3e7f2b4d1f9a2b6c8e7d6a5b4c3d2e1f0a9b8c7d6e5f4a3 -- run tasks/bench/task.star --arg model=model-a
   pumpkin controller boot
-  sudo ./pumpkin/bin/pumpkin controller install
+  sudo ./pumpkin/bin/pumpkin controller install --name alice --region us-west-1
 
 Exit status:
   0  The job's command, the boot or the install has ended as it should.
@@ -534,7 +534,9 @@ over SSH to the controller's private address, using up to four connections
 for large task uploads. The machine must have a route there and deploy/aws's
 `ssh_from` must admit it. The job runs the client's install with the module's
 settings and [controller.modal].
-The first command creates a key and enrols it through EC2 Instance Connect.
+The first command creates a key, which the controller admits once its admin
+lists it under the person's name in deploy/aws's `members`: until then, each
+command is refused, with the line to send the admin.
 The client keeps that key and the pinned host key in $HOME/.config/pumpkin/ssh/.
   name          The `name` that deploy/aws was applied with.
   region        The region it was applied in.

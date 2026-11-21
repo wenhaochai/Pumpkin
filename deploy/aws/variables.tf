@@ -1,5 +1,5 @@
 variable "name" {
-  description = "The person's name, which prefixes every resource's name, such as `pumpkin-<name>-sandbox`."
+  description = "The team's name, which prefixes every resource's name, such as `pumpkin-<name>-sandbox`."
   type        = string
 
   validation {
@@ -24,7 +24,7 @@ variable "subnet_id" {
 }
 
 variable "modal_workspace" {
-  description = "The ID of the person's Modal workspace, `ac-…`, whose tokens alone may assume the Modal pull role."
+  description = "The ID of the team's Modal workspace, `ac-…`, whose tokens alone may assume the Modal pull role."
   type        = string
 
   validation {
@@ -114,7 +114,7 @@ variable "pumpkin_release" {
 }
 
 variable "ssh_from" {
-  description = "The IPv4 CIDRs that may reach the controller's `sshd`, on port 22, such as the person's machine's private address as a `/32`: `pumpkin` reaches the controller at its private address, from the controller's VPC or a network routed to it. None by default, so no `pumpkin` reaches the controller."
+  description = "The IPv4 CIDRs that may reach the controller's `sshd`, on port 22, such as each member's machine's private address as a `/32`: `pumpkin` reaches the controller at its private address, from the controller's VPC or a network routed to it. None by default, so no `pumpkin` reaches the controller."
   type        = list(string)
   default     = []
 
@@ -124,8 +124,23 @@ variable "ssh_from" {
   }
 }
 
+variable "members" {
+  description = "The team's members, by name, each with the `ssh-ed25519` lines of their machines' `~/.config/pumpkin/ssh/key.pub`: the controller admits only these keys, and names each key's jobs by its member."
+  type        = map(list(string))
+
+  validation {
+    condition     = length(var.members) > 0
+    error_message = "`members` lists no one, so no key reaches the controller: list each member's key, such as `{ alice = [\"ssh-ed25519 AAAA… alice-laptop\"] }`."
+  }
+
+  validation {
+    condition     = alltrue([for keys in values(var.members) : length(keys) > 0])
+    error_message = "A member lists no key, so they can't reach the controller: list the line of each of their machines' `~/.config/pumpkin/ssh/key.pub`, or leave them out."
+  }
+}
+
 variable "client_roles" {
-  description = "The names of the IAM roles of the person's machine, each of which gets the client policy; leave empty when the roles live elsewhere and an administrator attaches `client_policy_arn` by hand."
+  description = "The names of the IAM roles of the members' machines, each of which gets the client policy; leave empty when the roles live elsewhere and an administrator attaches `client_policy_arn` by hand."
   type        = list(string)
   default     = []
 
@@ -136,7 +151,7 @@ variable "client_roles" {
 }
 
 variable "client_users" {
-  description = "The names of the IAM users of the person's machine, each of which gets the client policy; leave empty when the users live elsewhere and an administrator attaches `client_policy_arn` by hand."
+  description = "The names of the IAM users of the members' machines, each of which gets the client policy; leave empty when the users live elsewhere and an administrator attaches `client_policy_arn` by hand."
   type        = list(string)
   default     = []
 

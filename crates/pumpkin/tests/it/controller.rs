@@ -1171,6 +1171,40 @@ fn boot_registered_builds() {
     );
 }
 
+#[test]
+fn members_refused() {
+    let scratch = Scratch::new();
+    scratch.write_executable("bin/aws", AWS.as_bytes());
+    // A line whose key carries options of its own, which would replace the member's forced command.
+    let blob = "A".repeat(68);
+    let list =
+        format!("alice ssh-ed25519 {blob} alice-laptop\nbob command=\"sh\" ssh-ed25519 {blob}\n");
+    write_parameter(&scratch, &list);
+    let args = [
+        "controller",
+        "members",
+        "--name",
+        "team",
+        "--region",
+        "us-west-1",
+    ];
+    // As the members' unit runs it, from outside every install.
+    let mut members = scratch.program(PUMPKIN, &args);
+    members.env(
+        "PATH",
+        format!("{}:/usr/bin:/bin", scratch.0.join("bin").display()),
+    );
+    check(
+        &scratch,
+        &super::ran(members, &scratch.0, false),
+        &[(PUMPKIN, "pumpkin")],
+        &expect![[r#"
+            $ PATH=<scratch>/bin:/usr/bin:/bin pumpkin controller members --name team --region us-west-1
+            exit status: Some(1)
+            pumpkin: the members' keys, SSM parameter `/pumpkin-team/members`, line 2: member `bob`'s key is not an ed25519 public key: expected `ssh-ed25519 <68 characters of base64>` and an optional comment of printable ASCII, as `~/.config/pumpkin/ssh/key.pub` holds, so none is copied"#]],
+    );
+}
+
 const PINNED: &str = "1fe98e9dcf36c2dafe0df654e3899facc7dfa6f8";
 
 const INSTANCE: &str = "i-0c00000000000a11c";
@@ -1182,16 +1216,18 @@ const KEY: &str = "sk-client-stand-in";
 // Runs the controller command in the test's home, with cuts before the requested byte on either
 // stream. Each before-N action runs just before the Nth connection. A client home with a
 // `.member` is a key that the admin lists under that member, so the command runs as the
-// controller's forced command runs it.
+// controller's forced command runs it; `refused` refuses every key, as `sshd` does one unlisted.
 const SSH: &str = r#"#!/bin/sh
 dir=${0%/*}
 printf '%s\n' "$@" >> "$dir/argv"
 while :; do
     case $1 in
-        -o|-F|-i|-E) shift 2 ;;
+        -E) diagnostics=$2; shift 2 ;;
+        -o|-F|-i) shift 2 ;;
         *) break ;;
     esac
 done
+at=$1
 shift
 command=$*
 if [ -f "$HOME/.member" ]; then set -- pumpkin --member "$(cat "$HOME/.member")"; else set --; fi
@@ -1199,6 +1235,10 @@ first=$(printf '%s\n' "$command" | head --lines=1)
 printf '%s\n' "$first" >> "$dir/scripts"
 calls=$(wc --lines < "$dir/scripts")
 if [ -f "$dir/before-$calls" ]; then sh "$dir/before-$calls"; rm "$dir/before-$calls"; fi
+if [ -f "$dir/refused" ]; then
+    echo "$at: Permission denied (publickey)." >> "${diagnostics:-/dev/stderr}"
+    exit 255
+fi
 cd "$dir/../home" || exit 1
 export HOME="$PWD" XDG_RUNTIME_DIR="$dir/../run"
 if mv "$dir/cut-in" "$dir/cut-in-$$" 2>/dev/null; then
@@ -4227,6 +4267,29 @@ fn serve_refuses_member() {
             error: invalid value 'Bad!' for '--member <member>': `Bad!` is not a member's name: give one of 1 to 32 of a-z, 0-9 and `-`, starting with a letter
             pumpkin: to read how to use it: pumpkin controller serve --help
             pumpkin: controller `alice` didn't answer: ended before its hello"#]],
+    );
+}
+
+#[test]
+fn enrolment_refused() {
+    let scratch = Scratch::new();
+    let client = set_up_client(&scratch);
+    connect(&scratch, &client);
+    let _ = fs::remove_file(scratch.0.join("bin/calls"));
+    scratch.write("bin/refused", "");
+    let ls = ran_by(&scratch, on_client(&scratch, &client, &["ls"]), &["ls"]);
+    let key = fs::read_to_string(scratch.0.join("client/.config/pumpkin/ssh/key.pub")).unwrap();
+    let aws = scratch.0.join("bin/calls").exists();
+    let lines = [ls, format!("aws ran: {aws}")];
+    check(
+        &scratch,
+        &lines.join("\n"),
+        &[(key.trim_end(), "<key.pub>")],
+        &expect![[r#"
+            $ pumpkin ls
+            exit status: Some(1)
+            pumpkin: controller `alice` refused this machine's key: ask its admin to add this line under your name in deploy/aws's `members`, and apply, or, if it is listed, run the command again in a minute, once the controller has copied the list: "<key.pub>"
+            aws ran: false"#]],
     );
 }
 

@@ -33,12 +33,13 @@ output "modal_images" {
 }
 
 output "client_config" {
-  description = "The `[controller]` table of the person's machine's `pumpkin.toml`, beside its `[upstreams]`."
+  description = "The `[controller]` table of each member's machine's `pumpkin.toml`, beside its `[upstreams]`."
   value       = "[controller]\nname = ${jsonencode(var.name)}\nregion = ${jsonencode(var.region)}\n"
 }
 
-# What the person's machine needs to reach the controller: find it by its tag, start it, and push
-# the machine's key for the controller's user, then reach its `sshd` from `ssh_from`.
+# What a member's machine needs to reach the controller: find it by its tag and start it, then
+# reach its `sshd` from `ssh_from` with a key that `members` lists. It pushes no key: the admin's
+# list is the only way in.
 resource "aws_iam_policy" "client" {
   name        = "${local.prefix}-client"
   description = "What the machine of a person needs to reach its Pumpkin controller"
@@ -47,12 +48,6 @@ resource "aws_iam_policy" "client" {
     Statement = [
       { Effect = "Allow", Action = "ec2:DescribeInstances", Resource = "*" },
       { Effect = "Allow", Action = "ec2:StartInstances", Resource = local.controller_arn },
-      {
-        Effect    = "Allow"
-        Action    = "ec2-instance-connect:SendSSHPublicKey"
-        Resource  = local.controller_arn
-        Condition = { StringEquals = { "ec2:osuser" = "pumpkin" } }
-      },
       # A live check's look for a run's timers left behind: Scheduler's list takes no resource.
       { Effect = "Allow", Action = "scheduler:ListSchedules", Resource = "*" },
     ]
@@ -72,7 +67,7 @@ resource "aws_iam_user_policy_attachment" "client" {
 }
 
 output "client_policy_arn" {
-  description = "The managed IAM policy that the person's machine needs to reach the controller, which the apply attaches to `client_roles` and `client_users`, and an account whose roles live elsewhere attaches by hand."
+  description = "The managed IAM policy that each member's machine needs to reach the controller, which the apply attaches to `client_roles` and `client_users`, and an account whose roles live elsewhere attaches by hand."
   value       = aws_iam_policy.client.arn
 }
 

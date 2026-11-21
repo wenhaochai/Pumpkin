@@ -746,7 +746,9 @@ fn usage() {
               for large task uploads. The machine must have a route there and deploy/aws's
               `ssh_from` must admit it. The job runs the client's install with the module's
               settings and [controller.modal].
-              The first command creates a key and enrols it through EC2 Instance Connect.
+              The first command creates a key, which the controller admits once its admin
+              lists it under the person's name in deploy/aws's `members`: until then, each
+              command is refused, with the line to send the admin.
               The client keeps that key and the pinned host key in $HOME/.config/pumpkin/ssh/.
                 name          The `name` that deploy/aws was applied with.
                 region        The region it was applied in.

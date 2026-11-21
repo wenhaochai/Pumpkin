@@ -1,7 +1,8 @@
 //! The controller host's own software, which `pumpkin controller install` installs as root, from
 //! the release that its admin pins: the user that runs every Pumpkin process there, lingering, so
 //! that its job units outlive every SSH session; this `pumpkin`, at [`PUMPKIN`], which the units
-//! run; the units that reap at boot and stop the controller when idle; and `sshd`'s settings.
+//! run; the units that reap at boot, stop the controller when idle and copy the members' keys
+//! (`members`); and `sshd`'s settings, which admit only those keys for the user.
 //!
 //! What the host's provisioner installs first, the OS, Docker and the other packages that jobs
 //! run, is left to it: the install fails, naming it, where it finds one missing. The install
@@ -17,25 +18,30 @@
 
 mod boot;
 mod idle;
+mod members;
 
 use std::fs;
 use std::path::Path;
 use std::process::{Command, ExitCode};
 use std::time::Duration;
 
+use aws::Region;
 pub(crate) use boot::boot_all;
 pub(crate) use idle::idle;
+pub(crate) use members::members;
 use stdx::Context as _;
 use stdx::process::{Bound, Echo, Environment, Failure, Run};
 
-use crate::controller::USER;
+use crate::controller::{Name, USER};
 use crate::{say, whole};
 
 /// Where the install puts the `pumpkin` that runs it, which each unit runs.
 const PUMPKIN: &str = "/usr/local/sbin/pumpkin";
 
-// The login shell of `USER`.
-const SHELL: &str = "/bin/bash";
+// The login shell of `USER`, through which `sshd` runs each forced command: one that reads no
+// startup file of the user's for `-c`, so that a file that a job writes in the home runs before
+// no member's command.
+const SHELL: &str = "/bin/sh";
 
 // The group of the Docker engine, which Docker's package makes, and whose members the engine
 // serves as root.
@@ -47,29 +53,42 @@ const BOOT_UNIT: &str = crate::serve::BOOT_UNIT;
 
 const IDLE_TIMER: &str = "pumpkin-idle.timer";
 
+const MEMBERS_TIMER: &str = "pumpkin-members.timer";
+
 // Each unit, by name, as its file holds it before `fill`.
-const UNITS: [(&str, &str); 3] = [
+const UNITS: [(&str, &str); 5] = [
     (BOOT_UNIT, include_str!("host/pumpkin-boot.service")),
     (
         "pumpkin-idle.service",
         include_str!("host/pumpkin-idle.service"),
     ),
     (IDLE_TIMER, include_str!("host/pumpkin-idle.timer")),
+    (
+        "pumpkin-members.service",
+        include_str!("host/pumpkin-members.service"),
+    ),
+    (MEMBERS_TIMER, include_str!("host/pumpkin-members.timer")),
 ];
 
 // The units that are enabled, which the others are started by.
-const ENABLED: [&str; 2] = [BOOT_UNIT, IDLE_TIMER];
+const ENABLED: [&str; 3] = [BOOT_UNIT, IDLE_TIMER, MEMBERS_TIMER];
 
 // The enabled units that are started once enabled, as the others start at boot.
-const STARTED: [&str; 1] = [IDLE_TIMER];
+const STARTED: [&str; 2] = [IDLE_TIMER, MEMBERS_TIMER];
 
 const SSHD_DIR: &str = "/etc/ssh/sshd_config.d";
 
-// Each of `sshd`'s drop-ins, by name.
-const SSHD: [(&str, &str); 1] = [(
-    "00-pumpkin-keepalive.conf",
-    include_str!("host/00-pumpkin-keepalive.conf"),
-)];
+// Each of `sshd`'s drop-ins, by name, as its file holds it before `fill`.
+const SSHD: [(&str, &str); 2] = [
+    (
+        "00-pumpkin-keepalive.conf",
+        include_str!("host/00-pumpkin-keepalive.conf"),
+    ),
+    (
+        "10-pumpkin-members.conf",
+        include_str!("host/10-pumpkin-members.conf"),
+    ),
+];
 
 // What older installs wrote that this one doesn't, which it removes.
 const RETIRED: [&str; 2] = [
@@ -82,13 +101,15 @@ const RETIRED: [&str; 2] = [
 // meets first.
 const SYSTEM_TIMEOUT: Duration = Duration::from_mins(2);
 
-/// Installs the controller host's software, as the module says, and returns 0.
+/// Installs the software of the host of controller `name`, in `region`, as the module says, and
+/// returns 0.
 ///
 /// # Errors
 ///
 /// It doesn't run as root, the provisioner's part is missing, or a step fails; the steps before it
-/// stay done.
-pub(crate) fn install() -> Result<ExitCode, String> {
+/// stay done. The members' keys are copied before `sshd` is set to admit only them, so that a copy
+/// that fails leaves `sshd` as it was.
+pub(crate) fn install(name: &Name, region: &Region) -> Result<ExitCode, String> {
     if !rustix::process::geteuid().is_root() {
         return Err(
             "this `pumpkin controller install` doesn't run as root: run it as root, as with sudo"
@@ -107,17 +128,19 @@ pub(crate) fn install() -> Result<ExitCode, String> {
         }
     }
     let mut changed = false;
-    for (name, text) in UNITS {
+    for (file, text) in UNITS {
         changed |= wrote(
-            &Path::new(UNITS_DIR).join(name),
-            fill(text).as_bytes(),
+            &Path::new(UNITS_DIR).join(file),
+            fill(text, name, region).as_bytes(),
             0o644,
         )?;
     }
     units(changed)?;
+    members::copy(name, region)?;
     let mut sshd = false;
-    for (name, text) in SSHD {
-        sshd |= wrote(&Path::new(SSHD_DIR).join(name), text.as_bytes(), 0o644)?;
+    for (file, text) in SSHD {
+        let filled = fill(text, name, region);
+        sshd |= wrote(&Path::new(SSHD_DIR).join(file), filled.as_bytes(), 0o644)?;
     }
     if sshd {
         // Ubuntu's `ssh.service` checks the configuration before its reload signals `sshd`, and
@@ -127,9 +150,13 @@ pub(crate) fn install() -> Result<ExitCode, String> {
     Ok(ExitCode::SUCCESS)
 }
 
-/// `text` with each placeholder replaced by its value.
-fn fill(text: &str) -> String {
-    text.replace("@PUMPKIN@", PUMPKIN).replace("@USER@", USER)
+/// `text` with each placeholder replaced by its value, each of which a unit's command line and
+/// `sshd`'s configuration read as one word.
+fn fill(text: &str, name: &Name, region: &Region) -> String {
+    (text.replace("@PUMPKIN@", PUMPKIN).replace("@USER@", USER))
+        .replace("@MEMBERS@", members::MEMBERS)
+        .replace("@NAME@", &name.to_string())
+        .replace("@REGION@", region.as_str())
 }
 
 /// Writes `bytes` to `path` with permission bits `mode`, as [`whole::converge`] does, and says so
