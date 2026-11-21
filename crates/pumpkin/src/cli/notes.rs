@@ -342,7 +342,7 @@ Examples:
   pumpkin controller boot
 
 Exit status:
-  0  The job's command, or the boot, has ended as it should.
+  0  The job's command, the boot or another action has ended as it should.
   1  An error, which a `pumpkin:` line on the standard error says.
   2  A usage error.";
 

@@ -325,8 +325,9 @@ and a principal's policy from what its calls need (`iam::policy`).
 **Architecture Invariant:** a principal's policy is what the calls of the shipped binaries
 state. `Cli` runs only a `Call`, which names what IAM must allow of it, its actions, resources and
 conditions, as AWS's Service Authorization Reference gives them. Each crate that makes calls
-declares them in its `iam` module, which lists each in the policy of the principal that makes it.
-`xtask`'s own `aws` commands are a contributor's, and in no policy.
+declares them in its `iam` module, which lists each in the policy of the principal that makes it,
+and `pumpkin controller policy` prints each policy. `xtask`'s own `aws` commands are a
+contributor's, and in no policy.
 
 **Architecture Invariant:** every call that `Cli` makes is in its region, with no variable of this
 process's environment but those that find `aws`'s own configuration, so nothing steers it to
@@ -434,7 +435,8 @@ client's `Link` to `serve`, the controller's end, which starts and cancels jobs,
 lists the jobs, each with its member (`member`), that `wait` and `cancel` find a run among, streams a job's log and its milestones or its build IR,
 and is of the client's own build, installed there
 whole, its executable and the files beside it, by a SHA-256 of theirs;
-`iam` states the calls of its own on AWS. `manifest` describes the task tree and the client install that `send` transfers by content, and
+`iam` states the calls of its own on AWS and composes each principal's
+policy from its calls and the providers'. `manifest` describes the task tree and the client install that `send` transfers by content, and
 its `store` admits complete uploads by their SHA-256. `job` is the controller's side, whose
 `start` starts each id once under the jobs' lock and keeps the install its unit runs, with the
 prune and the slots that admit its builds and publishes

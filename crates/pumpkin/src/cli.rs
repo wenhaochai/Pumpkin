@@ -29,6 +29,7 @@ use self::notes::{
     LS_NOTES, PUBLISH_NOTES, REAP_NOTES, RUN_NOTES, VIEW_NOTES, WAIT_NOTES,
 };
 use crate::ending::Printed;
+use crate::iam::{self, Principal};
 use crate::member::Member;
 use crate::publish::{Bucket, Since};
 use crate::star::Entry;
@@ -130,7 +131,8 @@ run` and `pumpkin build` start there in a unit of its own; `boot` reaps what los
 runs left, at the controller's boot; `cancel` cancels a run for `pumpkin cancel`, on a client, which says the run's
 ending from its copy of the record; `serve` answers, on its standard input and
 output, the client that follows a job, lists the runs or views them; and `publish` uploads the runs to the bucket
-of the public page.")]
+of the public page. Off the controller: `policy` prints the IAM policy of a
+principal of the controller's deployment.")]
     #[command(after_help = CONTROLLER_NOTES)]
     #[command(disable_help_subcommand = true, subcommand_value_name = "action")]
     #[command(subcommand_help_heading = "Actions")]
@@ -190,7 +192,20 @@ Default: none, for a link that names no member")]
     #[command(about = "Upload the runs to the bucket of the public page")]
     #[command(long_about = PUBLISH_ABOUT, after_help = PUBLISH_NOTES)]
     Publish(Publish),
+    #[command(about = "Print the IAM policy of a principal of the controller's deployment")]
+    #[command(long_about = POLICY_ABOUT, after_help = iam::placeholders())]
+    Policy {
+        #[arg(value_name = "principal")]
+        #[arg(help = "The principal whose policy to print.")]
+        principal: Principal,
+    },
 }
+
+const POLICY_ABOUT: &str = "\
+Print the IAM policy that a principal of the controller's deployment needs, as
+IAM's JSON: each statement that the calls of this build's code on AWS need, as
+that principal, and nothing else. A value that only the deployment knows, such
+as its account, is a placeholder that Terraform's `templatefile` fills.";
 
 const PUBLISH_ABOUT: &str = "\
 Upload the runs in --runs to an S3 bucket, from which a static copy of the
@@ -236,7 +251,8 @@ Default: none"
 }
 
 /// What a command line asks for. `Job` and the variants after it are the controller's own side,
-/// `pumpkin controller <action>`; `Print` holds help or the version, for the standard output.
+/// `pumpkin controller <action>`; `Print` holds help, the version or a policy, for the standard
+/// output.
 pub(crate) enum Command {
     Run(Run),
     Wait(Wait),
@@ -731,6 +747,9 @@ fn command_of(cli: &mut clap::Command, parsed: Parsed) -> Result<Command, clap::
         Parsed::Controller {
             action: Action::Publish(publish),
         } => Command::Publish(publish),
+        Parsed::Controller {
+            action: Action::Policy { principal },
+        } => Command::Print(iam::policy(principal)),
         Parsed::Controller {
             action:
                 Action::Job {

@@ -38,6 +38,7 @@ mod driver;
 mod export;
 mod fmt;
 mod ls;
+mod policy;
 mod publish;
 mod reap;
 mod run;
