@@ -8,10 +8,10 @@
 
 use std::collections::BTreeSet;
 use std::ffi::OsStr;
-use std::io::{ErrorKind, Write as _};
+use std::io::Write as _;
 use std::num::{NonZeroU64, NonZeroUsize};
 use std::path::{Path, PathBuf};
-use std::process::{ExitStatus, Output};
+use std::process::{Command, Output};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 use std::{fmt, fs, io};
@@ -21,8 +21,7 @@ use schema::ir::{Image, MILLIS_PER_CPU, Resources, User};
 use schema::sandbox::{PUMPKIN_BYTES, pumpkin_dir};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
-use stdx::Deadline;
-use stdx::process::Environment;
+use stdx::process::{self, Bound, Echo, Environment, Failure, Run};
 
 mod build;
 pub mod prune;
@@ -371,7 +370,7 @@ impl Engine {
         // store an image's full ID names that image alone.
         let inspected = match docker(context, inspect) {
             Ok(inspected) => inspected,
-            Err(Failure::Exited { stderr, .. }) if stderr.contains("No such image") => {
+            Err(failure) if failure.reported().contains("No such image") => {
                 return Err(format!(
                     "the engine of context `{name}` has no image {image}: build it there, or \
                      `docker load` an archive that holds it, as Pumpkin pulls none onto it"
@@ -464,7 +463,7 @@ impl Engine {
             let inspect = ["image", "inspect", "--format", format, "--", id];
             let printed = match docker(context, inspect) {
                 Ok(printed) => printed,
-                Err(Failure::Exited { stderr, .. }) if stderr.contains("No such image") => continue,
+                Err(failure) if failure.reported().contains("No such image") => continue,
                 Err(error) => return Err(fix_reported(&error)),
             };
             let printed = String::from_utf8_lossy(&printed.stdout);
@@ -586,25 +585,32 @@ fn reach(context: &ContextName) -> Result<Reach, String> {
     let template = "{{.Endpoints.docker.Host}}";
     // After `--`, a name that begins with `-` can't be taken for an option.
     let inspect = ["context", "inspect", "--format", template, "--", name];
-    let inspected = docker(context, inspect).map_err(|error| {
-        format!(
-            "the Docker context `{name}` can't be read: {error}: name one that \
-             `docker context ls` lists"
-        )
+    let inspected = docker(context, inspect).map_err(|failure| {
+        let unread = format!("the Docker context `{name}` can't be read");
+        match failure {
+            Failure::Exited { .. } => format!(
+                "{unread}: {}: name one that `docker context ls` lists",
+                failure.unadvised()
+            ),
+            Failure::Unstarted { .. } | Failure::Unwatched { .. } | Failure::Unended { .. } => {
+                format!("{unread}: {}", fix_reported(&failure))
+            }
+        }
     })?;
     let endpoint = String::from_utf8_lossy(&inspected.stdout).trim().to_owned();
-    let info = docker(context, ["info", "--format", "{{json .}}"]).map_err(|error| {
-        let todo = match &error {
-            Failure::Exited { stderr, .. } if stderr.contains("permission denied") => {
+    let info = docker(context, ["info", "--format", "{{json .}}"]).map_err(|failure| {
+        let unreached = format!("the Docker engine isn't reachable through context `{name}`");
+        let todo = match &failure {
+            Failure::Exited { .. } if failure.reported().contains("permission denied") => {
                 "let this user reach the engine's socket: by the `docker` group, which is \
                  root-equivalent, or by running rootless Docker and naming its context"
             }
-            Failure::Unrun(_)
-            | Failure::Unwatched { .. }
-            | Failure::Unended { .. }
-            | Failure::Exited { .. } => "start the engine, or name a context whose engine runs",
+            Failure::Exited { .. } => "start the engine, or name a context whose engine runs",
+            Failure::Unstarted { .. } | Failure::Unwatched { .. } | Failure::Unended { .. } => {
+                return format!("{unreached}: {}", fix_reported(&failure));
+            }
         };
-        format!("the Docker engine isn't reachable through context `{name}`: {error}: {todo}")
+        format!("{unreached}: {}: {todo}", failure.unadvised())
     })?;
     Ok(Reach {
         endpoint,
@@ -765,24 +771,28 @@ fn image_id(context: &ContextName, reference: &str) -> Result<Option<String>, Fa
         Ok(inspected) => Ok(Some(
             String::from_utf8_lossy(&inspected.stdout).trim().to_owned(),
         )),
-        Err(Failure::Exited { stderr, .. }) if stderr.contains("No such image") => Ok(None),
+        Err(failure) if failure.reported().contains("No such image") => Ok(None),
         Err(error) => Err(error),
     }
 }
 
-/// `error`, from a `docker` command that failed for a reason its caller doesn't foresee, and what
+/// `failure`, of a `docker` command that failed for a reason its caller doesn't foresee, and what
 /// to do about it.
 ///
-/// That is to check the engine, if it was killed at its bound, as Docker reported nothing; or else
-/// to fix what Docker reports, which says what is wrong.
-pub fn fix_reported(error: &Failure) -> String {
-    let todo = match error {
-        Failure::Unended { .. } => "check that the engine runs and isn't overloaded",
-        Failure::Unrun(_) | Failure::Unwatched { .. } | Failure::Exited { .. } => {
-            "fix what Docker reports"
+/// That is to check the engine, if the command was killed at its bound, as Docker reported
+/// nothing; nothing, if its deadline had passed before it could start, which only the caller can
+/// say what to do about; or else what `failure` says.
+pub fn fix_reported(failure: &Failure) -> String {
+    match failure {
+        Failure::Unended { started: true, .. } => format!(
+            "{}: check that the engine runs and isn't overloaded",
+            failure.unadvised()
+        ),
+        Failure::Unended { started: false, .. } => failure.unadvised(),
+        Failure::Unstarted { .. } | Failure::Unwatched { .. } | Failure::Exited { .. } => {
+            failure.to_string()
         }
-    };
-    format!("{error}: {todo}")
+    }
 }
 
 /// Runs `docker` against `context` alone with `args`, as [`docker_to`] does, within 2 min
@@ -796,11 +806,13 @@ where
 }
 
 /// Runs `docker` against `context` alone with `args`, killing it at `bound`, and returns its
-/// output. Of the environment, `docker` gets only `HOME`, `PATH` and `DOCKER_CONFIG`, so that the
-/// context named alone steers it.
+/// output.
 ///
-/// A [`Failure`] says whether `docker` didn't run, failed or was killed at `bound`, and what Docker
-/// reported, for the caller to add what that means and what to do.
+/// Of the environment, `docker` gets only `HOME`, `PATH` and `DOCKER_CONFIG`, and the context as
+/// `DOCKER_CONTEXT`, so that the context named alone steers it.
+///
+/// A [`Failure`] says whether `docker` didn't start, failed or was killed at `bound`, and what
+/// Docker reported, for the caller to add what that means.
 pub fn docker_to<I, S>(context: &ContextName, args: I, bound: Bound) -> Result<Output, Failure>
 where
     I: IntoIterator<Item = S>,
@@ -809,7 +821,7 @@ where
     docker_as(context, args, bound, None)
 }
 
-fn docker_command<I, S>(context: &ContextName, args: I) -> std::process::Command
+fn docker_command<I, S>(context: &ContextName, args: I) -> Command
 where
     I: IntoIterator<Item = S>,
     S: AsRef<OsStr>,
@@ -817,10 +829,11 @@ where
     // A context reached over `ssh://` would need `SSH_AUTH_SOCK` too, which isn't passed.
     let kept = Environment::Only(&["HOME", "PATH", "DOCKER_CONFIG"]);
     let mut command = stdx::process::command("docker", kept);
-    command
-        // One argument, so that a name that begins with `-` can't be taken for an option.
-        .arg(format!("--context={}", context.as_str()))
-        .args(args);
+    // In the environment, rather than as `--context`, so that the name a failure gives the command
+    // is its own: `docker` takes `DOCKER_CONTEXT` as it takes `--context`, but for a `DOCKER_HOST`
+    // set, which this environment never holds.
+    // https://github.com/docker/cli/blob/f9ced58158d5e0b358052432244b483774a1983d/cli/command/cli.go#L453-L471
+    command.env("DOCKER_CONTEXT", context.as_str()).args(args);
     command
 }
 
@@ -834,111 +847,9 @@ where
     I: IntoIterator<Item = S>,
     S: AsRef<OsStr>,
 {
-    let args: Vec<S> = args.into_iter().collect();
-    // `docker`, its command, such as `container ls`, and its argument, as in `start <id>`, but none
-    // of its options, which can be long.
-    let mut shown = "docker".to_owned();
-    let words = args.iter().map(|arg| arg.as_ref().to_string_lossy());
-    for word in words.take(2).take_while(|word| !word.starts_with('-')) {
-        shown.push(' ');
-        shown.push_str(&word);
-    }
-    let mut command = docker_command(context, &args);
+    let mut command = docker_command(context, args);
     if let Some(login) = login {
         command.env("DOCKER_AUTH_CONFIG", login.auth_config());
     }
-    let by = match bound {
-        Bound::Within(timeout) => Deadline::after(timeout),
-        Bound::Until(by) => by,
-    };
-    let output = match stdx::process::output(&mut command, by) {
-        Ok(Some(output)) => output,
-        Ok(None) => {
-            let command = shown;
-            return Err(Failure::Unended { command, bound });
-        }
-        // A spawn fails so when it finds no `docker`, or one it can't execute; any other error,
-        // such as a failed read of its output, isn't one that installing `docker` would mend.
-        Err(error)
-            if matches!(
-                error.kind(),
-                ErrorKind::NotFound | ErrorKind::PermissionDenied
-            ) =>
-        {
-            return Err(Failure::Unrun(error));
-        }
-        Err(error) => {
-            let command = shown;
-            return Err(Failure::Unwatched { command, error });
-        }
-    };
-    if output.status.success() {
-        return Ok(output);
-    }
-    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
-    Err(Failure::Exited {
-        command: shown,
-        status: output.status,
-        stderr,
-    })
-}
-
-/// Why a [`docker`] command failed, displayed as [`docker`] describes its error.
-pub enum Failure {
-    /// `docker` didn't run.
-    Unrun(io::Error),
-    /// It ran, but couldn't be followed to its end, as when its output couldn't be read: `command`
-    /// shows which, as for [`Exited`](Self::Exited).
-    Unwatched { command: String, error: io::Error },
-    /// It hadn't ended by `bound`, and was killed then, or never started, if a deadline had passed
-    /// before it.
-    Unended { command: String, bound: Bound },
-    /// It failed: `command` shows which, such as `docker container ls`, and `stderr` is what Docker
-    /// reported, or, where its report went to this process's standard error, that it says why.
-    Exited {
-        command: String,
-        status: ExitStatus,
-        stderr: String,
-    },
-}
-
-impl fmt::Display for Failure {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Unrun(error) => write!(
-                f,
-                "`docker` didn't run: {error}: install Docker's command line on `PATH`"
-            ),
-            Self::Unwatched { command, error } => write!(f, "running `{command}` failed: {error}"),
-            Self::Unended {
-                command,
-                bound: Bound::Within(timeout),
-            } => {
-                let secs = timeout.as_secs();
-                write!(
-                    f,
-                    "`{command}` didn't end within {secs} s, so it was killed"
-                )
-            }
-            Self::Unended {
-                command,
-                bound: Bound::Until(_),
-            } => write!(f, "the deadline passed before `{command}` ended"),
-            Self::Exited {
-                command,
-                status,
-                stderr,
-            } => write!(f, "`{command}` failed with {status}: {}", stderr.trim()),
-        }
-    }
-}
-
-#[derive(Clone, Copy)]
-/// When a `docker` command is killed if it hasn't ended ([`Engine`]).
-pub enum Bound {
-    /// This long after it starts.
-    Within(Duration),
-    /// At this deadline, however late the command starts: a command whose deadline has passed
-    /// never starts.
-    Until(Deadline),
+    process::run(&mut command, Run::new(bound, Echo::Silent))
 }

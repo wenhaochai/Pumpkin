@@ -1272,8 +1272,6 @@ impl<'a> StandIn<'a> {
         let docker = format!(
             r#"#!/bin/sh
 touch "{dir}/docker.ran"
-# `--context=<name>` comes first.
-shift
 # The build's look for an image by its tag, `image inspect --format {{{{.Id}}}} -- <tag>`, is a
 # command of its own to hold.
 name=$1

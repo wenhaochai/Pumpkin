@@ -1739,11 +1739,11 @@ fn configurations() {
             pumpkin: to run it again: pumpkin run --runs <scratch>/runs --config <scratch>/conf/unkeyed.toml --sandboxd <scratch>/sandboxd <scratch>/workflow/task.star
             $ PATH=<scratch>/nowhere pumpkin run workflow/task.star --sandboxd sandboxd --runs runs --config conf/served.toml
             exit status: Some(1)
-            pumpkin: the Docker context `nowhere` can't be read: `docker` didn't run: No such file or directory (os error 2): install Docker's command line on `PATH`: name one that `docker context ls` lists
+            pumpkin: the Docker context `nowhere` can't be read: `docker context inspect` didn't start: No such file or directory (os error 2): install `docker` on `PATH`
             pumpkin: to run it again: pumpkin run --runs <scratch>/runs --config <scratch>/conf/served.toml --sandboxd <scratch>/sandboxd <scratch>/workflow/task.star
             $ PATH=<scratch>/nowhere pumpkin run unrouted/task.star --sandboxd sandboxd --runs runs --config docked.toml
             exit status: Some(1)
-            pumpkin: the Docker context `nowhere` can't be read: `docker` didn't run: No such file or directory (os error 2): install Docker's command line on `PATH`: name one that `docker context ls` lists
+            pumpkin: the Docker context `nowhere` can't be read: `docker context inspect` didn't start: No such file or directory (os error 2): install `docker` on `PATH`
             pumpkin: to run it again: pumpkin run --runs <scratch>/runs --config <scratch>/docked.toml --sandboxd <scratch>/sandboxd <scratch>/unrouted/task.star"#]],
     );
 }

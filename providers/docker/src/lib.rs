@@ -20,10 +20,7 @@ use std::num::NonZeroU64;
 use std::path::Path;
 use std::process::Output;
 
-use engine::{
-    Bound, ContextName, Engine, Failure, REMOVE_TIMEOUT, confinement, docker, docker_to,
-    fix_reported,
-};
+use engine::{ContextName, Engine, REMOVE_TIMEOUT, confinement, docker, docker_to, fix_reported};
 use provider::{
     Console, Create, Created, Creator, ImageRef, Listed, Meeting, Provider, Ready, Reservation,
     Role, RunTag, SandboxId, SandboxdRef, Sweep, Undeleted,
@@ -32,6 +29,7 @@ use schema::ir::{Image, Name};
 use schema::sandbox::{SANDBOXCTL_PATH, SANDBOXD_PATH, SOCKET_NAME, SocketDial};
 use schema::workflow::{Class, Offers};
 use serde_json::json;
+use stdx::process::{Bound, Failure};
 use stdx::{Context, Deadline};
 
 use crate::cpus::Cpus;
@@ -204,7 +202,7 @@ impl Creator<SocketDial> for Docker<'_> {
         // may still make its container: the engine finishes a request whose client has gone, and
         // a list sees the container only once the engine has registered it, which may be after
         // the run's end has listed. Nothing starts it (`Creator::create`).
-        let by = Bound::Until(Deadline::at_unix(create.by.since_epoch()));
+        let by = Bound::By(Deadline::at_unix(create.by.since_epoch()));
         // Creating and starting apart gives the container's ID before anything can fail with
         // a container left behind, so a failure removes this container by its ID.
         let args = create_args(create, &dial, &self.cpus);
@@ -214,7 +212,8 @@ impl Creator<SocketDial> for Docker<'_> {
         if let Err(error) = docker_to(context, ["start", &id], by) {
             let mut message = fix_reported(&error);
             let left = format_args!("container {id} is left behind, as removing it failed");
-            if let Err(removal) = remove(context, &id, by).context(left) {
+            let removed = remove(context, &id, by).map_err(|failure| fix_reported(&failure));
+            if let Err(removal) = removed.context(left) {
                 message = format!("{message}; {removal}");
             }
             return Err(message);
@@ -339,7 +338,7 @@ fn remove(context: &ContextName, id: &str, bound: Bound) -> Result<(), Failure> 
     match docker_to(context, ["rm", "--force", "--volumes", id], bound) {
         Ok(_) => Ok(()),
         // Docker 29 exits 0 here; older engines, down to the engine's floor, Docker 28.0, fail.
-        Err(Failure::Exited { stderr, .. }) if stderr.contains("No such container") => Ok(()),
+        Err(failure) if failure.reported().contains("No such container") => Ok(()),
         Err(error) => Err(error),
     }
 }

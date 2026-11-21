@@ -97,15 +97,18 @@ fn report() {
     for name in ["pumpkin-missing", "--help"] {
         let context = ContextName::try_from(name.to_owned()).unwrap();
         let refused = Engine::connect(context, &engine_dir()).unwrap_err();
-        let (wrong, _) = refused.split_once(": ").unwrap();
+        // What Docker reports varies with its version; what to do is said once, after it.
+        assert!(!refused.contains("fix what it reports"), "{refused}");
+        let (wrong, rest) = refused.split_once(": ").unwrap();
+        let (failed, _) = rest.split_once(" failed with ").unwrap();
         let (_, todo) = refused.rsplit_once(": ").unwrap();
-        lines.push(format!("{wrong}: …: {todo}"));
+        lines.push(format!("{wrong}: {failed} failed with …: {todo}"));
     }
     expect![[r#"
         endpoint, versions, kernel, OS and platform named: true
         the Docker context's name is empty: name one that `docker context ls` lists
-        the Docker context `pumpkin-missing` can't be read: …: name one that `docker context ls` lists
-        the Docker context `--help` can't be read: …: name one that `docker context ls` lists"#]]
+        the Docker context `pumpkin-missing` can't be read: `docker context inspect` failed with …: name one that `docker context ls` lists
+        the Docker context `--help` can't be read: `docker context inspect` failed with …: name one that `docker context ls` lists"#]]
     .assert_eq(&lines.join("\n"));
 }
 
@@ -259,7 +262,7 @@ fn builds() {
             a symbolic link: <dir>/context/link is neither a directory nor a regular file: give a build's context only those
             a name with a space: `<dir>/context/a b` holds whitespace or a control character: name a build context's files without them
             a name with a tab: `<dir>/context/a\tb` holds whitespace or a control character: name a build context's files without them
-            an uppercase repository: the image tagged `pumpkin-docker-tests/Builds:700c07c0f69ca70bceeae61d7f8c0fb3d3bc44e9e3f4d8a084cf9f706de50dc9` can't be looked up: `docker image inspect` failed with exit status: 1: Error response from daemon: invalid reference format: repository name (pumpkin-docker-tests/Builds) must be lowercase: fix what Docker reports"#]],
+            an uppercase repository: the image tagged `pumpkin-docker-tests/Builds:700c07c0f69ca70bceeae61d7f8c0fb3d3bc44e9e3f4d8a084cf9f706de50dc9` can't be looked up: `docker image inspect` failed with exit status: 1: Error response from daemon: invalid reference format: repository name (pumpkin-docker-tests/Builds) must be lowercase: fix what it reports"#]],
     );
 }
 

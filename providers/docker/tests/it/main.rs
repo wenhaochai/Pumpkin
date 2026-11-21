@@ -852,16 +852,16 @@ fn hung_create() {
             let bin = fixture.dir.join("bin");
             fs::create_dir(&bin).unwrap();
             let script = "#!/bin/sh\nPATH=${PATH#*:}\n\
-                          [ \"$2\" = create ] && { setsid --wait docker \"$@\"; exec sleep 60; }\n\
+                          [ \"$1\" = create ] && { setsid --wait docker \"$@\"; exec sleep 60; }\n\
                           exec docker \"$@\"\n";
             let docker = bin.join("docker");
             fs::write(&docker, script).unwrap();
             fs::set_permissions(&docker, fs::Permissions::from_mode(0o755)).unwrap();
             let path = format!("{}:{}", bin.display(), env::var("PATH").unwrap());
-            // `--context=<name>` comes first, and Docker's `docker` on `PATH` after `bin`. Docker's
-            // create runs in a session of its own, which the kill at the deadline doesn't reach, so
-            // it makes its container however slow the engine is, and the provider's create, which
-            // waits for the output it holds, returns once it has ended.
+            // Docker's `docker` is on `PATH` after `bin`. Docker's create runs in a session of its
+            // own, which the kill at the deadline doesn't reach, so it makes its container however
+            // slow the engine is, and the provider's create, which waits for the output it holds,
+            // returns once it has ended.
             let kept = &[
                 "HOME",
                 "DOCKER_CONFIG",
@@ -878,7 +878,7 @@ fn hung_create() {
             created.lines().map(str::to_owned).collect()
         },
         &expect![[r#"
-            the create failed: the deadline passed before `docker create` ended: check that the engine runs and isn't overloaded
+            the create failed: `docker create` hadn't ended by its deadline, so it was killed: check that the engine runs and isn't overloaded
             the run's list then finds: 1"#]],
     );
 }
@@ -912,7 +912,7 @@ fn failed_start() {
         &expect![[r#"
             missing: publishing `sandboxd` failed: <dir>/absent can't be mounted at /.pumpkin/sandboxd: No such file or directory (os error 2): name a path that exists
             not_utf8: publishing `sandboxd` failed: <dir>/sandboxd� can't be mounted at /.pumpkin/sandboxd: name a path of UTF-8
-            unexecutable: `docker start …: fix what Docker reports
+            unexecutable: `docker start …: fix what it reports
             unpulled: the engine of context `<context>` has no image sha256:0000000000000000000000000000000000000000000000000000000000000000: build it there, or `docker load` an archive that holds it, as Pumpkin pulls none onto it
             left: []"#]],
     );
@@ -923,7 +923,7 @@ fn redact(fixture: &Fixture, message: &str) -> String {
     let context = format!("context `{}`", engine().report().context.as_str());
     let message = (message.replace(&fixture.dir.display().to_string(), "<dir>"))
         .replace(&context, "context `<context>`");
-    let (from, to) = ("`docker start ", ": fix what Docker reports");
+    let (from, to) = ("`docker start ", ": fix what it reports");
     if let Some((before, rest)) = message.split_once(from)
         && let Some((_, after)) = rest.split_once(to)
     {

@@ -136,7 +136,7 @@ fn cancels() {
             pumpkin: <scratch>/runs/20261108-120200-0b000003/driver.pid isn't there: expected the record of a run to have it
             $ PATH= pumpkin cancel 20261108-120300-0c000004 --runs runs
             exit status: Some(3)
-            pumpkin: run 20261108-120300-0c000004's sandboxes on provider `local`, if it left any, can't be removed, as it can't be reached: the Docker context `recorded` can't be read: `docker` didn't run: No such file or directory (os error 2): install Docker's command line on `PATH`: name one that `docker context ls` lists; once it can be, `pumpkin reap --runs <scratch>/runs` removes them, and if it is gone for good, remove the record, <scratch>/runs/20261108-120300-0c000004, to stop reaping it
+            pumpkin: run 20261108-120300-0c000004's sandboxes on provider `local`, if it left any, can't be removed, as it can't be reached: the Docker context `recorded` can't be read: `docker context inspect` didn't start: No such file or directory (os error 2): install `docker` on `PATH`; once it can be, `pumpkin reap --runs <scratch>/runs` removes them, and if it is gone for good, remove the record, <scratch>/runs/20261108-120300-0c000004, to stop reaping it
             pumpkin: run 20261108-120300-0c000004 was lost, as its driver ended without an outcome.json: it is now recorded as failed
             pumpkin: run 20261108-120300-0c000004 failed: its driver ended without an outcome; its record is <scratch>/runs/20261108-120300-0c000004
             pumpkin: to run it again: pumpkin run --runs <scratch>/runs <scratch>/task.star

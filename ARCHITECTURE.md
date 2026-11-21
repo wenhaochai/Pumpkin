@@ -307,8 +307,9 @@ depends on no provider. It depends on `recipe`, `schema` and `stdx` alone of Pum
 
 **Architecture Invariant:** `docker` runs against the context the operator named, and nothing in
 the environment overrides it. The crate makes every `docker` command one way, for `Engine` and for
-the Docker provider's calls (`docker_to`) alike: with the context as its first argument, through
-`stdx::process::command`, given of the environment only what finds `docker`'s own configuration.
+the Docker provider's calls (`docker_to`) alike: through `stdx::process::command`, with the context
+as `DOCKER_CONTEXT`, given of the rest of the environment only what finds `docker`'s own
+configuration, and never `DOCKER_HOST`, which would override the context.
 
 **Architecture Invariant:** what a build fetches is pinned, an image by its digest, a file by its
 checksum and a Git tree by its full commit, so an image's tag names what it is built from. Each

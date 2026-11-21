@@ -485,6 +485,35 @@ fn reported() {
     expect!["2047 characters, 2046 of them ü, ending in 'x'"].assert_eq(&shown);
 }
 
+// A failure whose message says what to do, without it.
+#[test]
+fn unadvised() {
+    let dir = tempfile::tempdir().unwrap();
+    let silent = |bound| Run::new(bound, Echo::Silent);
+    let past = Bound::By(Deadline::after(Duration::ZERO));
+    let failures = [
+        run("echo it broke. >&2; exit 3", dir.path(), silent(LONG_BOUND)),
+        run("exit 3", dir.path(), silent(LONG_BOUND)),
+        run(
+            "exit 3",
+            dir.path(),
+            silent(LONG_BOUND).stderr(Stream::Discarded),
+        ),
+        run("exec sleep 60", dir.path(), silent(Bound::Within(LIMIT))),
+        run("exit 0", dir.path(), silent(past)),
+        run("exit 0", &dir.path().join("absent"), silent(LONG_BOUND)),
+    ];
+    let shown = failures.map(|ran| ran.unwrap_err().unadvised()).join("\n");
+    expect![[r#"
+        `sh` failed with exit status: 3: it broke
+        `sh` failed with exit status: 3 and wrote nothing to standard error
+        `sh` failed with exit status: 3, its standard error discarded
+        `sh` didn't end within 0.001 s, so it was killed
+        `sh` didn't start, as its deadline had passed
+        `sh` didn't start: No such file or directory (os error 2)"#]]
+    .assert_eq(&shown.replace(dir.path().to_str().unwrap(), "$DIR"));
+}
+
 #[test]
 fn unstarted() {
     let dir = tempfile::tempdir().unwrap();

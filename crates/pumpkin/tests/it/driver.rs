@@ -346,12 +346,12 @@ fn detaches() {
             $ pumpkin wait --outcome <id> --runs runs
             exit status: Some(3)
             pumpkin: run <id> started <t> after it was asked for, and ran <t>:
-                 <t> agent on local/container, failed at <t>: the agent's sandbox didn't start: `docker create` failed with exit status: 1: the stand-in creates nothing: fix what Docker reports; its work ended at <t>
-                 <t> final call job 0 on local/container, never started, ended after <t>: failed: the job's sandbox didn't start: `docker create` failed with exit status: 1: the stand-in creates nothing: fix what Docker reports
+                 <t> agent on local/container, failed at <t>: the agent's sandbox didn't start: `docker create` failed with exit status: 1: the stand-in creates nothing: fix what it reports; its work ended at <t>
+                 <t> final call job 0 on local/container, never started, ended after <t>: failed: the job's sandbox didn't start: `docker create` failed with exit status: 1: the stand-in creates nothing: fix what it reports
               sandboxes: 2 on local/container, <t> in all, none created
-            pumpkin: run <id> finished without a result: the final call gave none (error: the job's sandbox didn't start: `docker create` failed with exit status: 1: the stand-in creates nothing: fix what Docker reports); it ran no command; its record is <scratch>/runs/<id>
+            pumpkin: run <id> finished without a result: the final call gave none (error: the job's sandbox didn't start: `docker create` failed with exit status: 1: the stand-in creates nothing: fix what it reports); it ran no command; its record is <scratch>/runs/<id>
             pumpkin: to run it again: pumpkin run --runs <scratch>/runs --config <scratch>/pumpkin.toml --sandboxd <scratch>/sandboxd <scratch>/stand-in/task.star
-            printed outcome.json: {"agents":[{"role":"agent","submission":null,"work_end":{"kind":"agent_failed","reason":"the agent's sandbox didn't start: `docker create` failed with exit status: 1: the stand-in creates nothing: fix what Docker reports"}}],"state":"finished","usage":{"model_requests":0,"ran_ns":"<ns>","sandboxes":[{"class":"container","count":2,"lasted_ns":"<ns>","provider":"local"}],"tokens":{"input":0,"output":0,"responses":0}},"verdict":{"failure":{"kind":"error","reason":"the job's sandbox didn't start: `docker create` failed with exit status: 1: the stand-in creates nothing: fix what Docker reports"},"kind":"no_result"}}
+            printed outcome.json: {"agents":[{"role":"agent","submission":null,"work_end":{"kind":"agent_failed","reason":"the agent's sandbox didn't start: `docker create` failed with exit status: 1: the stand-in creates nothing: fix what it reports"}}],"state":"finished","usage":{"model_requests":0,"ran_ns":"<ns>","sandboxes":[{"class":"container","count":2,"lasted_ns":"<ns>","provider":"local"}],"tokens":{"input":0,"output":0,"responses":0}},"verdict":{"failure":{"kind":"error","reason":"the job's sandbox didn't start: `docker create` failed with exit status: 1: the stand-in creates nothing: fix what it reports"},"kind":"no_result"}}
             driver.log: ""
             $ PATH=<scratch>/bin:/usr/bin:/bin pumpkin run stand-in/task.star --sandboxd sandboxd --runs runs --config pumpkin.toml --wait
             ended by signal: 2
@@ -365,12 +365,12 @@ fn detaches() {
             $ pumpkin wait --outcome <id> --runs runs
             exit status: Some(3)
             pumpkin: run <id> started <t> after it was asked for, and ran <t>:
-                 <t> agent on local/container, failed at <t>: the agent's sandbox didn't start: `docker create` failed with exit status: 1: the stand-in creates nothing: fix what Docker reports; its work ended at <t>
-                 <t> final call job 0 on local/container, never started, ended after <t>: failed: the job's sandbox didn't start: `docker create` failed with exit status: 1: the stand-in creates nothing: fix what Docker reports
+                 <t> agent on local/container, failed at <t>: the agent's sandbox didn't start: `docker create` failed with exit status: 1: the stand-in creates nothing: fix what it reports; its work ended at <t>
+                 <t> final call job 0 on local/container, never started, ended after <t>: failed: the job's sandbox didn't start: `docker create` failed with exit status: 1: the stand-in creates nothing: fix what it reports
               sandboxes: 2 on local/container, <t> in all, none created
-            pumpkin: run <id> finished without a result: the final call gave none (error: the job's sandbox didn't start: `docker create` failed with exit status: 1: the stand-in creates nothing: fix what Docker reports); it ran no command; its record is <scratch>/runs/<id>
+            pumpkin: run <id> finished without a result: the final call gave none (error: the job's sandbox didn't start: `docker create` failed with exit status: 1: the stand-in creates nothing: fix what it reports); it ran no command; its record is <scratch>/runs/<id>
             pumpkin: to run it again: pumpkin run --runs <scratch>/runs --config <scratch>/pumpkin.toml --sandboxd <scratch>/sandboxd <scratch>/stand-in/task.star
-            printed outcome.json: {"agents":[{"role":"agent","submission":null,"work_end":{"kind":"agent_failed","reason":"the agent's sandbox didn't start: `docker create` failed with exit status: 1: the stand-in creates nothing: fix what Docker reports"}}],"state":"finished","usage":{"model_requests":0,"ran_ns":"<ns>","sandboxes":[{"class":"container","count":2,"lasted_ns":"<ns>","provider":"local"}],"tokens":{"input":0,"output":0,"responses":0}},"verdict":{"failure":{"kind":"error","reason":"the job's sandbox didn't start: `docker create` failed with exit status: 1: the stand-in creates nothing: fix what Docker reports"},"kind":"no_result"}}
+            printed outcome.json: {"agents":[{"role":"agent","submission":null,"work_end":{"kind":"agent_failed","reason":"the agent's sandbox didn't start: `docker create` failed with exit status: 1: the stand-in creates nothing: fix what it reports"}}],"state":"finished","usage":{"model_requests":0,"ran_ns":"<ns>","sandboxes":[{"class":"container","count":2,"lasted_ns":"<ns>","provider":"local"}],"tokens":{"input":0,"output":0,"responses":0}},"verdict":{"failure":{"kind":"error","reason":"the job's sandbox didn't start: `docker create` failed with exit status: 1: the stand-in creates nothing: fix what it reports"},"kind":"no_result"}}
             driver.log: ""
             $ PATH=<scratch>/bin:/usr/bin:/bin pumpkin run stand-in/task.star --sandboxd sandboxd --runs runs --config pumpkin.toml
             ended by signal: 15
@@ -382,12 +382,12 @@ fn detaches() {
             $ pumpkin wait --outcome <id> --runs runs
             exit status: Some(3)
             pumpkin: run <id> started <t> after it was asked for, and ran <t>:
-                 <t> agent on local/container, failed at <t>: the agent's sandbox didn't start: `docker create` failed with exit status: 1: the stand-in creates nothing: fix what Docker reports; its work ended at <t>
-                 <t> final call job 0 on local/container, never started, ended after <t>: failed: the job's sandbox didn't start: `docker create` failed with exit status: 1: the stand-in creates nothing: fix what Docker reports
+                 <t> agent on local/container, failed at <t>: the agent's sandbox didn't start: `docker create` failed with exit status: 1: the stand-in creates nothing: fix what it reports; its work ended at <t>
+                 <t> final call job 0 on local/container, never started, ended after <t>: failed: the job's sandbox didn't start: `docker create` failed with exit status: 1: the stand-in creates nothing: fix what it reports
               sandboxes: 2 on local/container, <t> in all, none created
-            pumpkin: run <id> finished without a result: the final call gave none (error: the job's sandbox didn't start: `docker create` failed with exit status: 1: the stand-in creates nothing: fix what Docker reports); it ran no command; its record is <scratch>/runs/<id>
+            pumpkin: run <id> finished without a result: the final call gave none (error: the job's sandbox didn't start: `docker create` failed with exit status: 1: the stand-in creates nothing: fix what it reports); it ran no command; its record is <scratch>/runs/<id>
             pumpkin: to run it again: pumpkin run --runs <scratch>/runs --config <scratch>/pumpkin.toml --sandboxd <scratch>/sandboxd <scratch>/stand-in/task.star
-            printed outcome.json: {"agents":[{"role":"agent","submission":null,"work_end":{"kind":"agent_failed","reason":"the agent's sandbox didn't start: `docker create` failed with exit status: 1: the stand-in creates nothing: fix what Docker reports"}}],"state":"finished","usage":{"model_requests":0,"ran_ns":"<ns>","sandboxes":[{"class":"container","count":2,"lasted_ns":"<ns>","provider":"local"}],"tokens":{"input":0,"output":0,"responses":0}},"verdict":{"failure":{"kind":"error","reason":"the job's sandbox didn't start: `docker create` failed with exit status: 1: the stand-in creates nothing: fix what Docker reports"},"kind":"no_result"}}
+            printed outcome.json: {"agents":[{"role":"agent","submission":null,"work_end":{"kind":"agent_failed","reason":"the agent's sandbox didn't start: `docker create` failed with exit status: 1: the stand-in creates nothing: fix what it reports"}}],"state":"finished","usage":{"model_requests":0,"ran_ns":"<ns>","sandboxes":[{"class":"container","count":2,"lasted_ns":"<ns>","provider":"local"}],"tokens":{"input":0,"output":0,"responses":0}},"verdict":{"failure":{"kind":"error","reason":"the job's sandbox didn't start: `docker create` failed with exit status: 1: the stand-in creates nothing: fix what it reports"},"kind":"no_result"}}
             driver.log: """#]],
     );
 }

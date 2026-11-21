@@ -78,6 +78,63 @@ impl Failure {
             Cow::Owned(text) => Cow::Owned(trimmed(&text).to_owned()),
         }
     }
+
+    /// What went wrong, as the failure's message says it, without what was expected or what to
+    /// fix: for a caller that says what to do itself.
+    pub fn unadvised(&self) -> String {
+        self.parts().0
+    }
+
+    /// The failure's message in two: what went wrong, then what was expected or what to fix, if
+    /// the message says.
+    fn parts(&self) -> (String, Option<&str>) {
+        match self {
+            Self::Unstarted {
+                name,
+                error,
+                expected,
+            } => (format!("`{name}` didn't start: {error}"), Some(expected)),
+            Self::Unwatched { name, error } => (format!("running `{name}` failed: {error}"), None),
+            Self::Unended {
+                name,
+                bound,
+                started,
+            } => {
+                let (wrong, expected) = unended(name, *bound, *started);
+                (wrong, Some(expected))
+            }
+            Self::Exited {
+                name,
+                output,
+                stderr,
+            } => {
+                let status = output.status;
+                let (wrong, expected) = match stderr {
+                    Stream::Captured => match self.reported() {
+                        reported if reported.is_empty() => (
+                            format!(
+                                "`{name}` failed with {status} and wrote nothing to standard error"
+                            ),
+                            "expected it to exit with 0",
+                        ),
+                        reported => (
+                            format!("`{name}` failed with {status}: {reported}"),
+                            "fix what it reports",
+                        ),
+                    },
+                    Stream::Inherited => (
+                        format!("`{name}` failed with {status}"),
+                        "fix what it printed above",
+                    ),
+                    Stream::Discarded => (
+                        format!("`{name}` failed with {status}, its standard error discarded"),
+                        "expected it to exit with 0",
+                    ),
+                };
+                (wrong, Some(expected))
+            }
+        }
+    }
 }
 
 /// What was expected of `command`, which didn't start for `error`.
@@ -140,71 +197,33 @@ fn trimmed(text: &str) -> &str {
 
 impl fmt::Display for Failure {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Unstarted {
-                name,
-                error,
-                expected,
-            } => write!(f, "`{name}` didn't start: {error}: {expected}"),
-            Self::Unwatched { name, error } => write!(f, "running `{name}` failed: {error}"),
-            Self::Unended {
-                name,
-                bound,
-                started,
-            } => unended(f, name, *bound, *started),
-            Self::Exited {
-                name,
-                output,
-                stderr,
-            } => {
-                let status = output.status;
-                match stderr {
-                    Stream::Captured => match self.reported() {
-                        reported if reported.is_empty() => write!(
-                            f,
-                            "`{name}` failed with {status} and wrote nothing to standard error: \
-                             expected it to exit with 0"
-                        ),
-                        reported => write!(
-                            f,
-                            "`{name}` failed with {status}: {reported}: fix what it reports"
-                        ),
-                    },
-                    Stream::Inherited => write!(
-                        f,
-                        "`{name}` failed with {status}: fix what it printed above"
-                    ),
-                    Stream::Discarded => write!(
-                        f,
-                        "`{name}` failed with {status}, its standard error discarded: expected \
-                         it to exit with 0"
-                    ),
-                }
-            }
+        match self.parts() {
+            (wrong, Some(expected)) => write!(f, "{wrong}: {expected}"),
+            (wrong, None) => f.write_str(&wrong),
         }
     }
 }
 
-fn unended(f: &mut fmt::Formatter<'_>, name: &str, bound: Bound, started: bool) -> fmt::Result {
+fn unended(name: &str, bound: Bound, started: bool) -> (String, &'static str) {
     match (bound, started) {
         (Bound::Within(timeout), true) => {
             let secs = timeout.as_secs_f64();
-            write!(
-                f,
-                "`{name}` didn't end within {secs} s, so it was killed: expected it to end by then"
+            (
+                format!("`{name}` didn't end within {secs} s, so it was killed"),
+                "expected it to end by then",
             )
         }
-        (Bound::Within(_), false) => write!(
-            f,
-            "`{name}` didn't start, as its bound was 0 s: expected a bound that leaves it time"
+        (Bound::Within(_), false) => (
+            format!("`{name}` didn't start, as its bound was 0 s"),
+            "expected a bound that leaves it time",
         ),
-        (Bound::By(_), true) => write!(
-            f,
-            "`{name}` hadn't ended by its deadline, so it was killed: expected it to end by then"
+        (Bound::By(_), true) => (
+            format!("`{name}` hadn't ended by its deadline, so it was killed"),
+            "expected it to end by then",
         ),
-        (Bound::By(_), false) => write!(
-            f,
-            "`{name}` didn't start, as its deadline had passed: expected one that leaves it time"
+        (Bound::By(_), false) => (
+            format!("`{name}` didn't start, as its deadline had passed"),
+            "expected one that leaves it time",
         ),
     }
 }

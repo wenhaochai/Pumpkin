@@ -549,10 +549,7 @@ fn start_untagged(
     command.env("BUILDX_CONFIG", engine.dir.join("buildx"));
     // In this process's group, so that the terminal's interrupt reaches it too: a session that
     // BuildKit cancels once its client is gone.
-    let started = (command.stdin(Stdio::null()).stdout(file).stderr(errors)).spawn();
-    started.map_err(|error| {
-        format!("`docker build` didn't start: {error}: install Docker's command line on `PATH`")
-    })
+    stdx::process::spawn(&mut command, Stdio::null(), file.into(), errors.into())
 }
 
 struct Inputs {
