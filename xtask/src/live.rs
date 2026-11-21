@@ -10,7 +10,7 @@ use std::{env, fs, thread};
 use stdx::process::Environment;
 
 use crate::settings::{Provider, Settings};
-use crate::{Cargo, Result, install_file, root, sandboxd, star, tools, wait};
+use crate::{Cargo, Result, install_file, root, sandboxd, sandboxes, star, tools, wait};
 
 mod examples;
 
@@ -561,30 +561,7 @@ fn ended(record: &Path) -> (serde_json::Value, Vec<String>) {
     if outcome["state"] != "finished" {
         failed.push(format!("the run didn't finish: {}", outcome["state"]));
     }
-    // Each sandbox's directory, as the record lays them out.
-    let mut dirs = Vec::new();
-    for kind in ["agents", "shared", "jobs", "leases"] {
-        if let Ok(entries) = fs::read_dir(record.join(kind)) {
-            dirs.extend(entries.flatten().map(|entry| entry.path()));
-        }
-    }
-    dirs.sort();
-    for dir in dirs {
-        let sandbox = match read(&dir.join("sandbox.json")) {
-            Ok(sandbox) => sandbox,
-            Err(error) => {
-                failed.push(error);
-                continue;
-            }
-        };
-        let deleted = sandbox["delete"]["state"].as_str().unwrap_or("not deleted");
-        if deleted != "deleted" {
-            failed.push(format!(
-                "sandbox {} on {} is {deleted}",
-                sandbox["id"], sandbox["provider"]
-            ));
-        }
-    }
+    failed.extend(sandboxes::undeleted(record));
     (outcome, failed)
 }
 

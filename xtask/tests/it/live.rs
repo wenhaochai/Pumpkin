@@ -1,13 +1,15 @@
 //! What `cargo xtask live` reads of the configuration that names the controller, and what it
 //! refuses there before any run, and which lines of a run's progress tell its id and a lease
-//! ready.
+//! ready, and which sandboxes of a record are wrong.
 
+use std::fs;
 use std::path::Path;
 
 use expect_test::expect;
+use test_support::TestDir;
 
 use super::settings::{Provider, Settings};
-use super::wait;
+use super::{sandboxes, wait};
 
 /// A configuration whose controller has two Modal classes, one of whose GPU two classes share.
 const CONFIG: &str = r#"[controller]
@@ -156,4 +158,46 @@ fn others_failed() {
         this run named among others: false
         no run named: false"#]]
     .assert_eq(&shown.join("\n"));
+}
+
+// A record with a sandbox of each kind of directory, and a directory of each kind without one, as
+// a run that leaves jobs without sandboxes writes it: what is wrong of its sandboxes.
+#[test]
+fn undeleted() {
+    let record = TestDir::new();
+    let write = |dir: &str, sandbox: &str| {
+        let dir = record.path().join(dir);
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(dir.join("sandbox.json"), sandbox).unwrap();
+    };
+    let deleted = r#"{"provider":"aws","id":"sb-1","delete":{"state":"deleted"}}"#;
+    write("agents/alice", deleted);
+    write("agents/bob", r#"{"provider":"aws","id":"sb-2"}"#);
+    write("jobs/1", deleted);
+    write(
+        "jobs/2",
+        r#"{"provider":"aws","id":"sb-3","delete":{"state":"failed"}}"#,
+    );
+    write("jobs/4", "{");
+    write("leases/0", deleted);
+    // A job that made no sandbox has only its log, and the board no more than its directory.
+    fs::create_dir_all(record.path().join("jobs/0/log")).unwrap();
+    fs::create_dir_all(record.path().join("jobs/3")).unwrap();
+    fs::create_dir_all(record.path().join("shared/board")).unwrap();
+    // A `sandbox.json` that can't be read is no absent one.
+    fs::create_dir_all(record.path().join("leases/1/sandbox.json")).unwrap();
+    let wrong = sandboxes::undeleted(record.path());
+    let shown: Vec<String> = (wrong.iter())
+        .map(|wrong| wrong.replace(record.path().to_str().unwrap(), "<record>"))
+        .collect();
+    expect![[r#"
+        sandbox "sb-2" on "aws" is not deleted
+        sandbox "sb-3" on "aws" is failed
+        <record>/jobs/4/sandbox.json isn't JSON: EOF while parsing an object at line 1 column 1
+        reading <record>/leases/1/sandbox.json failed: Is a directory (os error 21)"#]]
+    .assert_eq(&shown.join("\n"));
+    assert_eq!(
+        sandboxes::undeleted(&record.path().join("none")),
+        Vec::<String>::new()
+    );
 }

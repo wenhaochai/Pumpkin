@@ -22,6 +22,8 @@ mod gate;
 mod live;
 mod op_stats;
 mod release;
+#[path = "../../src/sandboxes.rs"]
+mod sandboxes;
 #[path = "../../src/settings.rs"]
 mod settings;
 #[path = "../../src/tidy.rs"]
