@@ -1,0 +1,34 @@
+{
+  "attribution": "Hypergraph Core Numbers, FrontierCS 2, by the FrontierCS contributors. Source: https://github.com/FrontierCS/FrontierCS-2/tree/1867a902b24a3a89e8c1ede73f76c28d1f102c3c/tasks/problems/HPC/hypergraph_core_numbers. Selectors supplied unchanged under CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/). The starter, native tools, verifier, reference and workloads come from this source revision. The Ligra implementation retains Julian Shun’s MIT license: https://github.com/FrontierCS/FrontierCS-2/blob/1867a902b24a3a89e8c1ede73f76c28d1f102c3c/tasks/problems/HPC/hypergraph_core_numbers/repo/LICENSE. The Pumpkin team workflow and wrappers are separate additions.",
+  "interface": {
+    "agent": {
+      "prepare": "/frontier/task/prepare_workspace.sh",
+      "package": "/frontier/task/make_submission.sh"
+    },
+    "judge": {
+      "command": "/opt/frontier/verifier",
+      "home": "/frontier",
+      "withheld": [
+        "/opt/frontier/task/workloads/graded-a.adj",
+        "/opt/frontier/task/workloads/graded-b.adj",
+        "/opt/frontier/task/artifact_manifest.json"
+      ],
+      "env": {
+        "mode": "FRONTIER_VERIFICATION_MODE",
+        "scratch": "FRONTIER_VERIFIER_SCRATCH",
+        "payload": "FRONTIER_PAYLOAD_PATH",
+        "dataset": "FRONTIER_DATASET_PATH",
+        "result": "FRONTIER_RESULT_PATH",
+        "evidence": "FRONTIER_EVIDENCE_PATH"
+      }
+    }
+  },
+  "source": {
+    "repository": "https://github.com/FrontierCS/FrontierCS-2.git",
+    "revision": "1867a902b24a3a89e8c1ede73f76c28d1f102c3c",
+    "task": "tasks/problems/HPC/hypergraph_core_numbers",
+    "generated": ".frontier-generated",
+    "media": "https://media.githubusercontent.com/media/FrontierCS/FrontierCS-2/1867a902b24a3a89e8c1ede73f76c28d1f102c3c",
+    "verifier_python_path": "lib/install_frontier_pth.py"
+  }
+}

@@ -1,4 +1,4 @@
-"""Prepare image contexts from the official binding and its public Git source repository."""
+"""Prepare image contexts from binding.json and the public Git source repository it names."""
 
 import argparse
 import errno
@@ -11,8 +11,8 @@ from pathlib import Path
 
 from source import build_inputs
 
+BINDING = Path(__file__).resolve().parent / "binding.json"
 DESTINATION = Path(__file__).resolve().parents[1] / "benchmark-input"
-BINDING_SHA256 = "fc95851d530ef9dd72acff38207b6ffac4602c7ee5ac6148622dd0d5c1de7828"
 
 
 def contents(root):
@@ -34,11 +34,8 @@ def contents(root):
     return entries
 
 
-def prepare(binding_file, repository, destination=DESTINATION):
-    binding = json.loads(binding_file.read_bytes())
-    data = json.dumps(binding, sort_keys=True, separators=(",", ":")).encode()
-    if hashlib.sha256(data).hexdigest() != BINDING_SHA256:
-        raise ValueError("binding differs from the official workload recipe")
+def prepare(repository, destination=DESTINATION):
+    binding = json.loads(BINDING.read_bytes())
     with tempfile.TemporaryDirectory(dir=destination.parent) as scratch:
         root = Path(scratch) / destination.name
         root.mkdir()
@@ -56,12 +53,13 @@ def prepare(binding_file, repository, destination=DESTINATION):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("binding", type=Path)
     parser.add_argument(
-        "repository", type=Path, help="Git repository with the pinned public commit"
+        "repository",
+        type=Path,
+        help="Git repository with the source revision that binding.json names",
     )
     args = parser.parse_args()
     try:
-        prepare(args.binding, args.repository)
+        prepare(args.repository)
     except (OSError, ValueError, subprocess.CalledProcessError) as error:
         parser.exit(1, f"prepare: {error}\n")
