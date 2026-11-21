@@ -7,10 +7,12 @@
 )]
 
 use std::error::Error;
+use std::fs;
+use std::path::Path;
 
 use expect_test::{Expect, expect};
+use repo::Repo;
 use test_support::TestDir;
-use xshell::{Shell, cmd};
 
 #[path = "../../src/diff.rs"]
 mod diff;
@@ -19,6 +21,8 @@ mod entry;
 mod figure;
 mod live;
 mod op_stats;
+#[path = "../../src/repo.rs"]
+mod repo;
 #[path = "../../src/settings.rs"]
 mod settings;
 #[path = "../../src/tidy.rs"]
@@ -41,50 +45,51 @@ enum Standing {
 
 /// Writes `files`, each a path, its text and how it stands, into a new Git repository, and runs
 /// `run` there; the repository's path shows as `<repo>`.
-fn check(files: &[(&str, String, Standing)], run: impl FnOnce(&Shell) -> String, expect: &Expect) {
+fn check(
+    files: &[(&str, String, Standing)],
+    run: impl FnOnce(&Repo<'_>) -> String,
+    expect: &Expect,
+) {
     let scratch = TestDir::new();
     let dir = scratch.path();
-    let sh = Shell::new().unwrap();
-    sh.change_dir(dir);
-    // Git's own variables, inherited, would steer every command here to another repository, as
-    // the `GIT_DIR` that `git rebase --exec` sets in a linked worktree would. A `Shell` can set
-    // a variable but not remove one, so each that places a repository is set to this one's.
-    let git = dir.join(".git");
-    sh.set_var("GIT_DIR", &git);
-    sh.set_var("GIT_COMMON_DIR", &git);
-    sh.set_var("GIT_WORK_TREE", dir);
-    sh.set_var("GIT_INDEX_FILE", git.join("index"));
-    sh.set_var("GIT_OBJECT_DIRECTORY", git.join("objects"));
-    // Nor does the user's configuration, which could change what a diff prints.
-    sh.set_var("GIT_CONFIG_GLOBAL", "/dev/null");
-    sh.set_var("GIT_CONFIG_NOSYSTEM", "1");
-    for name in ["GIT_AUTHOR_NAME", "GIT_COMMITTER_NAME"] {
-        sh.set_var(name, "xtask");
-    }
-    for email in ["GIT_AUTHOR_EMAIL", "GIT_COMMITTER_EMAIL"] {
-        sh.set_var(email, "xtask@example.com");
-    }
-    cmd!(sh, "git init --quiet").quiet().run().unwrap();
-    sh.write_file(".gitignore", "ignored/\n").unwrap();
+    let repo = Repo { root: dir };
+    repo.git(["init", "--quiet"]).unwrap();
+    write(dir, ".gitignore", "ignored/\n");
     for (path, text, standing) in files {
-        sh.write_file(path, text).unwrap();
+        write(dir, path, text);
         if matches!(standing, Standing::Tracked | Standing::Deleted) {
-            cmd!(sh, "git add -- {path}").quiet().run().unwrap();
+            repo.git(["add", "--", path]).unwrap();
         }
         if *standing == Standing::Deleted {
-            sh.remove_path(path).unwrap();
+            fs::remove_file(dir.join(path)).unwrap();
         }
     }
-    cmd!(sh, "git commit --quiet --allow-empty --message base")
-        .quiet()
-        .run()
-        .unwrap();
-    let reported = run(&sh);
+    // An author, as git reads no configuration that names one.
+    let author = [
+        "-c",
+        "user.name=xtask",
+        "-c",
+        "user.email=xtask@example.com",
+    ];
+    repo.git(
+        author
+            .into_iter()
+            .chain(["commit", "--quiet", "--allow-empty", "--message", "base"]),
+    )
+    .unwrap();
+    let reported = run(&repo);
     expect.assert_eq(&reported.replace(dir.to_str().unwrap(), "<repo>"));
 }
 
-fn tidy(sh: &Shell) -> String {
-    match tidy::check(sh) {
+/// Writes `text` at `path` below `dir`, making its directory if need be.
+fn write(dir: &Path, path: &str, text: &str) {
+    let path = dir.join(path);
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    fs::write(path, text).unwrap();
+}
+
+fn tidy(repo: &Repo<'_>) -> String {
+    match tidy::check(repo) {
         Ok(()) => "passed".to_owned(),
         Err(error) => error.to_string(),
     }
@@ -478,11 +483,11 @@ fn figure_of_crates() {
     .to_string();
     check(
         &[],
-        |sh| {
-            let stale = figure::check(sh, &metadata).unwrap_err();
-            figure::write(sh, &metadata).unwrap();
-            let fresh = figure::check(sh, &metadata);
-            let drawn = sh.read_file(figure::PATH).unwrap();
+        |repo| {
+            let stale = figure::check(repo.root, &metadata).unwrap_err();
+            figure::write(repo.root, &metadata).unwrap();
+            let fresh = figure::check(repo.root, &metadata);
+            let drawn = repo.read(figure::PATH).unwrap();
             let drawn = drawn.replace(figure::STYLE, "<style>…</style>");
             format!("{stale}\n{fresh:?}\n{drawn}")
         },
@@ -599,16 +604,13 @@ fn diff() {
             ("notes.txt", "Notes.\n".to_owned(), Untracked),
             ("ignored/new.rs", "fn i() {}\n".to_owned(), Ignored),
         ],
-        |sh| {
-            sh.write_file("changed.rs", "fn f() {\n    g();\n}\n")
+        |repo| {
+            write(repo.root, "changed.rs", "fn f() {\n    g();\n}\n");
+            let refused = diff::since(repo, "HEAD", &[], again).unwrap_err();
+            repo.git(["add", "--intent-to-add", "--", "new.rs"])
                 .unwrap();
-            let refused = diff::since(sh, "HEAD", &[], again).unwrap_err();
-            cmd!(sh, "git add --intent-to-add -- new.rs")
-                .quiet()
-                .run()
-                .unwrap();
-            let diff = diff::since(sh, "HEAD", &[], again).unwrap();
-            let below = diff::since(sh, "HEAD", &["changed.rs".into()], again).unwrap();
+            let diff = diff::since(repo, "HEAD", &[], again).unwrap();
+            let below = diff::since(repo, "HEAD", &["changed.rs".into()], again).unwrap();
             format!("{refused}\n{diff}below changed.rs:\n{below}")
         },
         &expect![[r#"

@@ -19,6 +19,7 @@ use std::os::unix::fs::PermissionsExt as _;
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode, Stdio};
 
+use repo::Repo;
 use xshell::{Cmd, Shell, cmd};
 
 mod diff;
@@ -27,6 +28,7 @@ mod live;
 mod op_stats;
 mod page;
 mod release;
+mod repo;
 mod settings;
 mod star;
 mod tidy;
@@ -285,7 +287,7 @@ fn try_main() -> Result<()> {
             Ok(())
         }
         flags::XtaskCmd::Ci(flags::Ci) => ci(&cargo),
-        flags::XtaskCmd::Figures(flags::Figures) => figure::write(&cargo.sh, &metadata(&cargo)?),
+        flags::XtaskCmd::Figures(flags::Figures) => figure::write(root(), &metadata(&cargo)?),
         flags::XtaskCmd::Live(flags::Live {
             target,
             gpu_model,
@@ -387,8 +389,9 @@ fn root() -> &'static Path {
 fn ci(cargo: &Cargo) -> Result<()> {
     tools::require(cargo, tools::NEXTEST)?;
     cargo.fmt().arg("--check").run()?;
-    tidy::check(&cargo.sh)?;
-    figure::check(&cargo.sh, &metadata(cargo)?)?;
+    let repo = Repo { root: root() };
+    tidy::check(&repo)?;
+    figure::check(root(), &metadata(cargo)?)?;
     let clippy = cargo.cmd(&["clippy", "--workspace", "--all-targets", "--locked"]);
     clippy.args(["--", "--deny", "warnings"]).run()?;
     let doc = cargo.cmd(&["doc", "--no-deps", "--workspace", "--locked"]);
@@ -397,7 +400,7 @@ fn ci(cargo: &Cargo) -> Result<()> {
     let buildifier = star::link(cargo)?;
     let pumpkin = tests_pumpkin(cargo)?;
     star::place(&buildifier, &pumpkin)?;
-    star::check(&cargo.sh, &pumpkin)?;
+    star::check(&repo, &pumpkin)?;
     let test = cargo.cmd(&["nextest", "run", "--workspace", "--locked"]);
     let doctests = cargo.cmd(&["test", "--doc", "--workspace", "--locked"]);
     // ci checks snapshots, never rewrites them.
@@ -477,7 +480,8 @@ fn mutants(cargo: &Cargo, paths: &[PathBuf], rev: Option<&str>) -> Result<()> {
     let sh = &cargo.sh;
     let rev = rev.unwrap_or("origin/main");
     let base = cmd!(sh, "git merge-base {rev} HEAD").read()?;
-    let diff = diff::since(sh, &base, paths, &again)?;
+    let repo = Repo { root: root() };
+    let diff = diff::since(&repo, &base, paths, &again)?;
     let scratch = sh.create_temp_dir()?;
     let diff_path = scratch.path().join("changes.diff");
     sh.write_file(&diff_path, diff)?;

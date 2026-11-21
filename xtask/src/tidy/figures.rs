@@ -5,10 +5,10 @@ use std::collections::BTreeSet;
 use std::path::Path;
 
 use proc_macro2::{Delimiter, TokenStream, TokenTree};
-use xshell::Shell;
 
 use super::{split, word};
 use crate::Result;
+use crate::repo::Repo;
 
 /// Where the figures that documents embed are, from the repository's root.
 const FIGURES: &str = "docs/figures/";
@@ -21,9 +21,13 @@ const NOT_IN_FIGURES: [&str; 3] = ["<image", "<script", "@font-face"];
 /// in [`FIGURES`]: one that isn't an SVG, or that no document embeds; a figure without a
 /// `<title>` or a `<desc>`, or that holds what [`NOT_IN_FIGURES`] lists; and a word that a figure
 /// sets in its class `code`, split at `::`, that isn't among `names`.
-pub(super) fn check(sh: &Shell, files: &[String], names: &BTreeSet<String>) -> Result<Vec<String>> {
+pub(super) fn check(
+    repo: &Repo<'_>,
+    files: &[String],
+    names: &BTreeSet<String>,
+) -> Result<Vec<String>> {
     let mut problems = Vec::new();
-    let embedded = embeds(sh, files, &mut problems)?;
+    let embedded = embeds(repo, files, &mut problems)?;
     for path in files.iter().filter(|path| path.starts_with(FIGURES)) {
         if !svg(path) {
             problems.push(format!(
@@ -38,7 +42,7 @@ pub(super) fn check(sh: &Shell, files: &[String], names: &BTreeSet<String>) -> R
                  what it shows, or remove it"
             ));
         }
-        problems.extend(figure(path, &sh.read_file(path)?, names));
+        problems.extend(figure(path, &repo.read(path)?, names));
     }
     Ok(problems)
 }
@@ -50,13 +54,17 @@ fn svg(path: &str) -> bool {
 
 /// The figures that `files`' Markdown documents embed, adding to `problems` each image that has
 /// no alt text, or isn't an SVG in [`FIGURES`] among `files`.
-fn embeds(sh: &Shell, files: &[String], problems: &mut Vec<String>) -> Result<BTreeSet<String>> {
+fn embeds(
+    repo: &Repo<'_>,
+    files: &[String],
+    problems: &mut Vec<String>,
+) -> Result<BTreeSet<String>> {
     let mut embedded = BTreeSet::new();
     let documents = files
         .iter()
         .filter(|path| Path::new(path).extension() == Some("md".as_ref()));
     for document in documents {
-        let text = sh.read_file(document)?;
+        let text = repo.read(document)?;
         for (index, line) in text.lines().enumerate() {
             for (column, alt, target) in images(line) {
                 let at = format!("{document}:{}:{column}: an image of `{target}`", index + 1);
@@ -213,13 +221,13 @@ fn coded(line: &str) -> Vec<&str> {
 }
 
 /// The names of the packages and binaries that `files`' `Cargo.toml` manifests declare.
-pub(super) fn packages(sh: &Shell, files: &[String]) -> Result<BTreeSet<String>> {
+pub(super) fn packages(repo: &Repo<'_>, files: &[String]) -> Result<BTreeSet<String>> {
     let mut names = BTreeSet::new();
     for path in files
         .iter()
         .filter(|path| path.rsplit('/').next() == Some("Cargo.toml"))
     {
-        let manifest: toml::Table = toml::from_str(&sh.read_file(path)?)
+        let manifest: toml::Table = toml::from_str(&repo.read(path)?)
             .map_err(|error| format!("{path} isn't a manifest cargo reads: {error}"))?;
         let package = manifest
             .get("package")

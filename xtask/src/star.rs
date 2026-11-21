@@ -5,8 +5,9 @@ use std::fs;
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 
-use xshell::{Shell, cmd};
+use stdx::process::{self, Bound, Echo, Environment, Run, Stream};
 
+use crate::repo::{Repo, STEP_TIMEOUT};
 use crate::{Cargo, Result, tidy, tools};
 
 /// Where the `.star` files are that [`check`] leaves as they are: the language's test fixtures,
@@ -63,13 +64,21 @@ pub(crate) fn place(buildifier: &Path, pumpkin: &Path) -> Result<()> {
 /// Fails unless each of the repository's `.star` files, tracked or not yet, but not ignored, and
 /// but those below [`UNCHECKED`], is formatted, as `pumpkin fmt --check` of `pumpkin`, beside
 /// which [`place`] has put the formatter, says.
-pub(crate) fn check(sh: &Shell, pumpkin: &Path) -> Result<()> {
-    let files = tidy::files(sh, "star")?.into_iter();
+pub(crate) fn check(repo: &Repo<'_>, pumpkin: &Path) -> Result<()> {
+    let files = tidy::files(repo, "star")?.into_iter();
     let files: Vec<String> = files.filter(|path| !path.starts_with(UNCHECKED)).collect();
     // With no file named, `fmt` would format the working directory, the fixtures included.
     if files.is_empty() {
         return Ok(());
     }
-    cmd!(sh, "{pumpkin} fmt --check -- {files...}").run()?;
+    let mut fmt = process::command(pumpkin, Environment::Inherited);
+    fmt.current_dir(repo.root)
+        .args(["fmt", "--check", "--"])
+        .args(files);
+    let how = Run::new(Bound::Within(STEP_TIMEOUT), Echo::Line)
+        .stdout(Stream::Inherited)
+        .stderr(Stream::Inherited)
+        .named("pumpkin fmt");
+    process::run(&mut fmt, how).map_err(|failure| failure.to_string())?;
     Ok(())
 }

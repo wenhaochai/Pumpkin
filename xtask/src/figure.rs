@@ -9,8 +9,10 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
+use std::fs;
+use std::path::Path;
 
-use xshell::Shell;
+use stdx::Context as _;
 
 use crate::Result;
 
@@ -57,11 +59,11 @@ const TOP: usize = 16;
 /// How many times the rows are ordered, down then up, by where their neighbours are.
 const SWEEPS: usize = 8;
 
-/// Fails unless the figure at [`PATH`] below `sh`'s directory is what `metadata`, the output of
+/// Fails unless the figure at [`PATH`] below `root` is what `metadata`, the output of
 /// `cargo metadata --format-version 1 --no-deps`, draws.
-pub(crate) fn check(sh: &Shell, metadata: &str) -> Result<()> {
+pub(crate) fn check(root: &Path, metadata: &str) -> Result<()> {
     let drawn = crates(metadata)?;
-    let committed = sh.read_file(PATH).unwrap_or_default();
+    let committed = fs::read_to_string(root.join(PATH)).unwrap_or_default();
     if committed == drawn {
         return Ok(());
     }
@@ -72,10 +74,16 @@ pub(crate) fn check(sh: &Shell, metadata: &str) -> Result<()> {
     .into())
 }
 
-/// Writes at [`PATH`] below `sh`'s directory the figure that `metadata` draws.
-pub(crate) fn write(sh: &Shell, metadata: &str) -> Result<()> {
-    sh.write_file(PATH, crates(metadata)?)?;
-    Ok(())
+/// Writes at [`PATH`] below `root` the figure that `metadata` draws, making its directory if need
+/// be.
+pub(crate) fn write(root: &Path, metadata: &str) -> Result<()> {
+    let drawn = crates(metadata)?;
+    let path = root.join(PATH);
+    let written = path
+        .parent()
+        .map_or(Ok(()), fs::create_dir_all)
+        .and_then(|()| fs::write(&path, drawn));
+    Ok(written.context(format_args!("writing {PATH} failed"))?)
 }
 
 /// A place in a row: a crate's box, or where the arrow `edges[n]` passes a row between its ends.

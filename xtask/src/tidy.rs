@@ -14,9 +14,9 @@ use std::ops::Range;
 use std::path::Path;
 
 use proc_macro2::{Delimiter, LineColumn, Spacing, TokenStream, TokenTree};
-use xshell::{Shell, cmd};
 
 use crate::Result;
+use crate::repo::Repo;
 
 // By its path, as xtask's test binary includes this file from elsewhere.
 #[path = "tidy/figures.rs"]
@@ -47,11 +47,11 @@ const CEILINGS: &str = ".config/tidy.toml";
 /// Fails unless each of the repository's Rust files, tracked or not yet, but not ignored, its
 /// other source files, its `ARCHITECTURE.md`, its Markdown documents, its figures and the files
 /// under its `tests/` directories pass the checks. The error holds a line for each problem.
-pub(crate) fn check(sh: &Shell) -> Result<()> {
+pub(crate) fn check(repo: &Repo<'_>) -> Result<()> {
     let mut problems = Vec::new();
     let mut names = BTreeSet::new();
-    for path in files(sh, "rs")? {
-        let text = sh.read_file(&path)?;
+    for path in files(repo, "rs")? {
+        let text = repo.read(&path)?;
         let tokens: TokenStream = match text.parse() {
             Ok(tokens) => tokens,
             Err(error) => {
@@ -101,12 +101,12 @@ pub(crate) fn check(sh: &Shell) -> Result<()> {
         found.sort_by_key(|(line, _)| *line);
         problems.extend(found.into_iter().map(|(_, problem)| problem));
     }
-    problems.extend(architecture(sh)?);
-    let listed = listed(sh)?;
+    problems.extend(architecture(repo)?);
+    let listed = listed(repo)?;
     problems.extend(test_data(&listed));
-    problems.extend(long_files(sh, &listed)?);
-    names.extend(figures::packages(sh, &listed)?);
-    problems.extend(figures::check(sh, &listed, &names)?);
+    problems.extend(long_files(repo, &listed)?);
+    names.extend(figures::packages(repo, &listed)?);
+    problems.extend(figures::check(repo, &listed, &names)?);
     if problems.is_empty() {
         Ok(())
     } else {
@@ -115,18 +115,24 @@ pub(crate) fn check(sh: &Shell) -> Result<()> {
 }
 
 /// The files that Git lists, see [`check`], whose extension is `extension`.
-pub(crate) fn files(sh: &Shell, extension: &str) -> Result<Vec<String>> {
-    let mut files = listed(sh)?;
+pub(crate) fn files(repo: &Repo<'_>, extension: &str) -> Result<Vec<String>> {
+    let mut files = listed(repo)?;
     files.retain(|path| Path::new(path).extension() == Some(extension.as_ref()));
     Ok(files)
 }
 
 /// The paths of the files that Git lists, tracked or untracked and not ignored, that exist.
-fn listed(sh: &Shell) -> Result<Vec<String>> {
-    // Every file, filtered here: a pathspec's meaning changes with Git's variables, such as
-    // `GIT_LITERAL_PATHSPECS`, and `-z` keeps unusual names as they are rather than quoted.
-    let files = cmd!(sh, "git ls-files -z --cached --others --exclude-standard").read()?;
-    let kept = |path: &&str| !path.is_empty() && sh.path_exists(path);
+fn listed(repo: &Repo<'_>) -> Result<Vec<String>> {
+    // Every file, which each check filters itself; `-z` keeps unusual names as they are rather
+    // than quoted.
+    let files = repo.git([
+        "ls-files",
+        "-z",
+        "--cached",
+        "--others",
+        "--exclude-standard",
+    ])?;
+    let kept = |path: &&str| !path.is_empty() && repo.has(path);
     Ok(files.split('\0').filter(kept).map(str::to_owned).collect())
 }
 
@@ -155,10 +161,10 @@ fn test_data(paths: &[String]) -> Vec<String> {
 /// The problems of `paths` that are source files ([`SOURCES`]) outside a `tests/` directory: one
 /// over [`FILE_CAP`] and not listed in [`CEILINGS`], or past its ceiling there, and each entry
 /// of the list that is stale, its file gone, within the cap or under its ceiling.
-fn long_files(sh: &Shell, paths: &[String]) -> Result<Vec<String>> {
+fn long_files(repo: &Repo<'_>, paths: &[String]) -> Result<Vec<String>> {
     let mut ceilings = BTreeMap::new();
-    if sh.path_exists(CEILINGS) {
-        let table: toml::Table = toml::from_str(&sh.read_file(CEILINGS)?)
+    if repo.has(CEILINGS) {
+        let table: toml::Table = toml::from_str(&repo.read(CEILINGS)?)
             .map_err(|error| format!("{CEILINGS} isn't TOML: {error}"))?;
         let listed = table.get("long_files").and_then(toml::Value::as_table);
         for (path, ceiling) in listed.into_iter().flatten() {
@@ -186,7 +192,7 @@ fn long_files(sh: &Shell, paths: &[String]) -> Result<Vec<String>> {
         if under_tests || !extension.is_some_and(|extension| SOURCES.contains(&extension)) {
             continue;
         }
-        let lines = sh.read_file(path)?.lines().count();
+        let lines = repo.read(path)?.lines().count();
         let problem = match ceilings.remove(path.as_str()) {
             None if lines > FILE_CAP => {
                 format!("{path}: the file is {lines} lines, over the cap of {FILE_CAP}: {split}")
@@ -216,12 +222,12 @@ fn long_files(sh: &Shell, paths: &[String]) -> Result<Vec<String>> {
 }
 
 /// The problems of `ARCHITECTURE.md`'s links: one to code, or to a document that isn't there.
-fn architecture(sh: &Shell) -> Result<Vec<String>> {
+fn architecture(repo: &Repo<'_>) -> Result<Vec<String>> {
     const PATH: &str = "ARCHITECTURE.md";
-    if !sh.path_exists(PATH) {
+    if !repo.has(PATH) {
         return Ok(Vec::new());
     }
-    let text = sh.read_file(PATH)?;
+    let text = repo.read(PATH)?;
     let mut problems = Vec::new();
     for (index, line) in text.lines().enumerate() {
         for (at, opening) in line.match_indices("](") {
@@ -237,7 +243,7 @@ fn architecture(sh: &Shell) -> Result<Vec<String>> {
             let path = &target[..target.find('#').unwrap_or(target.len())];
             let problem = if Path::new(path).extension() != Some("md".as_ref()) {
                 "code in the repository: name it instead, in backticks"
-            } else if sh.path_exists(path) {
+            } else if repo.has(path) {
                 continue;
             } else {
                 "which isn't in the repository: link a document that is, or remove the link"
