@@ -55,7 +55,11 @@ const INSTALL_KEPT: Duration = Duration::from_hours(24);
 // The bound of `systemctl show`, which reads a unit's properties from systemd.
 const SYSTEMCTL_TIMEOUT: Duration = Duration::from_secs(10);
 
-const BOOT_UNIT: &str = "pumpkin-boot.service";
+/// The unit that reaps at the controller's boot.
+pub(crate) const BOOT_UNIT: &str = "pumpkin-boot.service";
+
+/// The file of the controller user's home that the boot's output is appended to.
+pub(crate) const BOOT_LOG: &str = "boot.log";
 
 const UPTIME: &str = "/proc/uptime";
 
@@ -340,16 +344,21 @@ fn pruned(entry: &DirEntry, own: Option<&OsStr>, now: SystemTime) -> Result<(), 
     }
 }
 
-fn health(home: &Path) -> Result<Health, String> {
+/// The whole seconds since the machine booted.
+pub(crate) fn up_seconds() -> Result<u64, String> {
     let uptime = fs::read_to_string(UPTIME).context(UPTIME)?;
     let seconds = uptime.split(['.', ' ']).next().unwrap_or_default();
-    let up_seconds = seconds.parse().map_err(|_| {
+    seconds.parse().map_err(|_| {
         format!(
             "{UPTIME} holds `{}`: expected the seconds since the machine booted, first, as \
              Linux writes them",
             uptime.trim().escape_debug()
         )
-    })?;
+    })
+}
+
+fn health(home: &Path) -> Result<Health, String> {
+    let up_seconds = up_seconds()?;
     let Disk {
         size_bytes,
         free_bytes,
@@ -383,7 +392,7 @@ fn boot(home: &Path) -> Boot {
         Some("failed") => match property("ExecMainStatus").map(str::parse) {
             Some(Ok(status)) => Boot::Failed {
                 status,
-                log: boot_log(&home.join("boot.log")).unwrap_or_else(|error| error.to_string()),
+                log: boot_log(&home.join(BOOT_LOG)).unwrap_or_else(|error| error.to_string()),
                 at: property("ExecMainExitTimestamp")
                     .filter(|at| !at.is_empty())
                     .map(str::to_owned),

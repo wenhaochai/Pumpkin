@@ -63,9 +63,17 @@ pub(crate) fn runs() -> String {
     format!("{}/{}", workspace::DIR, workspace::RUNS)
 }
 
+/// The start of the name of each job's unit, which its id ends.
+pub(crate) const UNIT_PREFIX: &str = "pumpkin-job-";
+
 pub(crate) fn unit_name(id: &RunTag) -> String {
-    format!("pumpkin-job-{}", id.as_str())
+    format!("{UNIT_PREFIX}{}", id.as_str())
 }
+
+/// The link to `pumpkin` in an install's `bin/`, `<install>/bin/pumpkin-boot`, whose
+/// `controller boot` the controller's boot runs: an install with none is of a build whose boot
+/// may reap another build's records.
+pub(crate) const BOOT_LINK: &str = "pumpkin-boot";
 
 // The link in a job's directory to the `pumpkin` that runs it.
 pub(crate) const OWN: &str = "pumpkin";

@@ -1,16 +1,8 @@
 #cloud-config
-# The controller's first boot, on Ubuntu 24.04 LTS: the user `pumpkin`, which runs every Pumpkin
-# process, lingering, so that its job units outlive every SSH session; what its jobs need, at the
-# versions controller.tf names; and two thin units that need no client and no Pumpkin build: the
-# idle stop, and the reap at boot once a job has run.
-groups:
-  - docker
-users:
-  - default
-  - name: pumpkin
-    groups: [docker]
-    shell: /bin/bash
-    lock_passwd: true
+# The controller's first boot, on Ubuntu 24.04 LTS: what its jobs need, at the versions
+# controller.tf names, then the Pumpkin release that `pumpkin_release` pins, whose
+# `pumpkin controller install` installs what Pumpkin itself relies on there: its user, its units
+# and `sshd`'s settings. An admin upgrades them by running a later release's install.
 
 # Over HTTPS, the one way out the controller's security group allows.
 apt:
@@ -39,84 +31,13 @@ write_files:
   - path: /etc/docker/daemon.json
     content: |
       {"features": {"containerd-snapshotter": true}}
-  # So that a session whose client has gone without a close, as a machine that slept or lost its
-  # network, ends within minutes rather than when TCP gives up, and stops holding off the idle
-  # stop. `sshd` probes after each 30 s in which it has nothing else to do, and ends the session
-  # once 3 probes have gone unanswered: about 2 minutes. The first value read wins, so the name
-  # sorts before cloud-init's own file.
-  # https://github.com/openssh/openssh-portable/blob/5dba72adacbd39736960543373737bc01e35f778/serverloop.c#L111-L141
-  # https://github.com/openssh/openssh-portable/blob/5dba72adacbd39736960543373737bc01e35f778/serverloop.c#L240-L251
-  - path: /etc/ssh/sshd_config.d/00-pumpkin-keepalive.conf
-    content: |
-      ClientAliveInterval 30
-      ClientAliveCountMax 3
-      # Simultaneous commands each open a session, as on SkyPilot's nodes.
-      MaxStartups 150:30:200
-  - path: /usr/local/sbin/pumpkin-idle
-    permissions: "0755"
-    content: |
-      #!/bin/bash
-      # Stops the controller, which keeps its volume, once it has had no Pumpkin job and no SSH
-      # session for 30 minutes, and has been up for as long.
-      set -o errexit -o nounset -o pipefail
-      busy=/var/lib/pumpkin/busy
-      jobs=$(systemctl --user --machine=pumpkin@ list-units --state=active --no-legend 'pumpkin-job-*')
-      ssh=$(loginctl list-sessions --no-legend | awk '{print $1}' \
-          | xargs --no-run-if-empty --max-args=1 loginctl show-session --property=Service --value \
-          | grep --line-regexp sshd || true)
-      if [ -n "$jobs" ] || [ -n "$ssh" ]; then
-          install --directory /var/lib/pumpkin && touch "$busy"
-      elif [ -z "$(find "$busy" -mmin -30 2>/dev/null)" ] \
-          && [ "$(cut --delimiter=. --fields=1 /proc/uptime)" -ge 1800 ]; then
-          systemctl poweroff
-      fi
-  - path: /etc/systemd/system/pumpkin-idle.service
-    content: |
-      [Unit]
-      Description=Stop the Pumpkin controller once it has been idle for 30 minutes
 
-      [Service]
-      Type=oneshot
-      ExecStart=/usr/local/sbin/pumpkin-idle
-  - path: /etc/systemd/system/pumpkin-idle.timer
-    content: |
-      [Unit]
-      Description=Check every 5 minutes whether the Pumpkin controller is idle
-
-      [Timer]
-      OnBootSec=5min
-      OnUnitActiveSec=5min
-
-      [Install]
-      WantedBy=timers.target
-  - path: /usr/local/bin/pumpkin-boot
-    permissions: "0755"
-    content: |
-      ${indent(6, boot_script)}
-  - path: /etc/systemd/system/pumpkin-boot.service
-    content: |
-      [Unit]
-      Description=Remove what lost Pumpkin runs left
-      ConditionPathExistsGlob=/home/pumpkin/.pumpkin/*/bin/pumpkin-boot
-      Wants=network-online.target
-      After=network-online.target docker.service
-
-      [Service]
-      Type=oneshot
-      User=pumpkin
-      ExecStart=/usr/local/bin/pumpkin-boot
-
-      [Install]
-      WantedBy=multi-user.target
-
-# cloud-init runs these as one script, so the idle stop is armed first: a controller whose
-# install fails below still stops once idle. Then AWS CLI v2's archive, whose SHA-256 is that of
-# the one AWS's signature verifies (key FB5D B77F D5C1 18B8 0511 ADA8 A631 0ACC 4672 475C), and
+# cloud-init runs these as one script, which stops at the first failure. AWS CLI v2's archive,
+# whose SHA-256 is that of the one AWS's signature verifies (key FB5D B77F D5C1 18B8 0511 ADA8
+# A631 0ACC 4672 475C); then Pumpkin's, whose SHA-256 is the third word of the `.pumpkinversion`
+# line, after the tag and the commit, and whose install arms the idle stop before the rest; then
 # uv's, whose SHA-256 is the one its release publishes beside it.
 runcmd:
-  - loginctl enable-linger pumpkin
-  - systemctl daemon-reload
-  - systemctl enable --now pumpkin-idle.timer pumpkin-boot.service
   - |
     set -o errexit
     cd "$(mktemp --directory)"
@@ -125,6 +46,13 @@ runcmd:
     echo '${aws_cli_sha256}  awscli.zip' | sha256sum --check --strict
     unzip -q awscli.zip
     ./aws/install
+    set -- ${pumpkin_release}
+    curl --fail --silent --show-error --location --proto '=https' --output pumpkin.tar.xz \
+        "https://github.com/FrontierCS/Pumpkin/releases/download/$1/pumpkin-$1-x86_64-unknown-linux-musl.tar.xz"
+    echo "$3  pumpkin.tar.xz" | sha256sum --check --strict
+    mkdir pumpkin
+    tar --extract --xz --file=pumpkin.tar.xz --directory=pumpkin
+    pumpkin/bin/pumpkin controller install
     curl --fail --silent --show-error --location --proto '=https' --output uv.tar.gz \
         https://github.com/astral-sh/uv/releases/download/${uv_version}/uv-x86_64-unknown-linux-gnu.tar.gz
     echo '${uv_sha256}  uv.tar.gz' | sha256sum --check --strict

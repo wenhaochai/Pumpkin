@@ -1146,12 +1146,9 @@ fn boot_registered_builds() {
     let broken = scratch.0.join("home/.pumpkin/0/bin");
     fs::create_dir_all(&broken).unwrap();
     symlink("/bin/false", broken.join("pumpkin-boot")).unwrap();
-    scratch.write_executable(
-        "boot",
-        include_bytes!("../../../../deploy/aws/pumpkin-boot"),
-    );
+    // As the boot's unit runs it, from outside every install.
     let status = scratch
-        .program(scratch.0.join("boot"), &[])
+        .program(PUMPKIN, &["controller", "boot-all"])
         .status()
         .unwrap();
     let home = scratch.0.join("home");

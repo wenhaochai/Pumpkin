@@ -48,7 +48,9 @@ there over `ssh` to its private address, and follows, lists, stops, reaps and vi
 there. The client's `controller serve` receives the files by content, starts jobs, streams
 their output, copies ended records and handles commands that inspect or stop runs. Each job runs
 in its own systemd unit. A job install publishes its `bin/pumpkin-boot` link with the build.
-On boot, systemd runs these entries so each build reaps the records it wrote.
+On boot, systemd runs these entries so each build reaps the records it wrote. The admin's
+`controller install`, of the release they pin, installs the units and the rest of what the host's
+Pumpkin relies on.
 
 ![The data between a machine and its controller, over ssh: the task's tree to the controller's store, the job's start, what the run says as it is followed, the rows that ls lists, the ids of the jobs that wait and cancel find a run among, and an ended run's record, each as the controller modules of pumpkin carry it, and the view's requests for the runs' data and their replies, over one ssh to serve on the controller.](docs/figures/controller-data.svg)
 
@@ -431,7 +433,8 @@ whole, its executable and the files beside it, by a SHA-256 of theirs;
 its `store` admits complete uploads by their SHA-256. `job` is the controller's side, whose
 `start` starts each id once under the jobs' lock and keeps the install its unit runs, with the
 prune and the slots that admit its builds and publishes
-(`Admission`), `publish` copies the runs, as `view` exports them, to the public page's bucket as
+(`Admission`), `host` is the host's software, which `controller install` installs as root and
+whose units run its boot and idle stop, `whole` replaces a file whole, `publish` copies the runs, as `view` exports them, to the public page's bucket as
 their jobs run, `progress` is what `ls` shows, `next` makes the commands to run next, `style` runs
 the formatter, `view` serves the runs' records to a browser, its `json` the JSON forms of what it
 answers with, its `Answering` the view that `serve` keeps to answer a client's, and `Workspace` is
@@ -519,8 +522,9 @@ developer installs.
 The Terraform module that makes one person's Pumpkin on AWS, as [its README](deploy/aws/README.md)
 says: the EC2 envelope
 that `ec2` relies on, the repositories that runs push to, Modal's pull role, the sandboxes' AMI,
-and the controller, with the SSM parameter of its jobs' settings and the units that stop it when
-idle and reap at its boot. No crate depends on it; its outputs feed a machine's configuration.
+and the controller, with the SSM parameter of its jobs' settings, whose first boot installs the
+packages its jobs run and then runs a pinned release's `controller install`. No crate depends on
+it; its outputs feed a machine's configuration.
 
 ### `examples`
 

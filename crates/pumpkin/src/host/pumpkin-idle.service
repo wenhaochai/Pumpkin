@@ -1,0 +1,6 @@
+[Unit]
+Description=Stop the Pumpkin controller once it has been idle for 30 minutes
+
+[Service]
+Type=oneshot
+ExecStart=@PUMPKIN@ controller idle

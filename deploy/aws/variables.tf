@@ -103,6 +103,16 @@ variable "controller_volume_throughput" {
   default     = 500
 }
 
+variable "pumpkin_release" {
+  description = "The line of a Pumpkin release's `pumpkinversion` asset, its tag, commit and archive's SHA-256, whose `pumpkin controller install` the controller runs at its first boot; a later release's reaches a running controller only as its admin runs it there."
+  type        = string
+
+  validation {
+    condition     = can(regex("^[a-zA-Z0-9][a-zA-Z0-9._-]* [0-9a-f]{40} [0-9a-f]{64}$", var.pumpkin_release))
+    error_message = "The release is not a `pumpkinversion` line, `<tag> <commit> <sha256>`: give that asset's line, such as a task repository's `.pumpkinversion` holds."
+  }
+}
+
 variable "ssh_from" {
   description = "The IPv4 CIDRs that may reach the controller's `sshd`, on port 22, such as the person's machine's private address as a `/32`: `pumpkin` reaches the controller at its private address, from the controller's VPC or a network routed to it. None by default, so no `pumpkin` reaches the controller."
   type        = list(string)

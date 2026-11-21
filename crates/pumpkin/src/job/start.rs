@@ -279,7 +279,7 @@ fn installed(home: &Path, install: &Sha256Digest) -> Result<PathBuf, String> {
             fs::hard_link(&source, made.path().join(&entry.path)).context(source.display())?;
         }
         // Older installs share this layout but their boot may reap another writer's records.
-        let boot = made.path().join("pumpkin-boot");
+        let boot = made.path().join(super::BOOT_LINK);
         symlink("pumpkin", &boot).context(boot.display())?;
         fs::rename(made.path(), &bin).context(bin.display())?;
     }

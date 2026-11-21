@@ -1,10 +1,8 @@
 //! The file of a run's job directory, `jobs/<id>/member`, that names the member who started the
 //! job, on one line. A job that a build from before members started has none.
 
-use std::fs::{self, File};
-use std::io::{self, Write as _};
-use std::os::unix::fs::PermissionsExt as _;
 use std::path::Path;
+use std::{fs, io};
 
 use stdx::Context as _;
 
@@ -26,19 +24,7 @@ pub(crate) fn member(job: &Path) -> Result<Option<Member>, String> {
 }
 
 /// Names `member` as the one of the job whose directory is `job`, whole or not at all, whenever
-/// the machine fails: written and synced aside, renamed into place, then the directory synced,
-/// as a run's record replaces a file.
+/// the machine fails.
 pub(crate) fn write_member(job: &Path, member: &Member) -> Result<(), String> {
-    let path = job.join(FILE);
-    let mut aside = tempfile::Builder::new()
-        .prefix(".member.")
-        .permissions(fs::Permissions::from_mode(0o644))
-        .tempfile_in(job)
-        .context(job.display())?;
-    let written = writeln!(aside, "{member}").and_then(|()| aside.as_file().sync_all());
-    written.context(aside.path().display())?;
-    aside.persist(&path).context(path.display())?;
-    File::open(job)
-        .and_then(|dir| dir.sync_all())
-        .context(job.display())
+    crate::whole::replace(&job.join(FILE), format!("{member}\n").as_bytes(), 0o644)
 }

@@ -27,6 +27,7 @@ mod config;
 mod controller;
 mod driver;
 mod ending;
+mod host;
 mod job;
 mod link;
 mod manifest;
@@ -41,6 +42,7 @@ mod serve;
 mod star;
 mod style;
 mod view;
+mod whole;
 mod workspace;
 
 use ending::{end, follow};
@@ -83,6 +85,9 @@ fn main() -> ExitCode {
         Ok(cli::Command::View(flags)) => view::view(flags),
         Ok(cli::Command::Job(flags)) => job::job(flags),
         Ok(cli::Command::Boot) => job::boot(),
+        Ok(cli::Command::Install) => host::install(),
+        Ok(cli::Command::BootAll) => host::boot_all(),
+        Ok(cli::Command::Idle) => host::idle(),
         Ok(cli::Command::CancelFor(flags)) => job::cancel(flags),
         Ok(cli::Command::Serve(member)) => serve::serve(member.as_ref()),
         Ok(cli::Command::Publish(flags)) => publish::by_hand(flags),

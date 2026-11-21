@@ -340,9 +340,10 @@ pub(super) const CONTROLLER_NOTES: &str = "\
 Examples:
   cd ~/trees/tasks/20261108-000905-126a21e9 && pumpkin controller job 20261108-000905-126a21e9 --region us-west-1 --parameter /pumpkin-alice/settings --tree 5d0c5f0e83a3c40be3e7f2b4d1f9a2b6c8e7d6a5b4c3d2e1f0a9b8c7d6e5f4a3 -- run tasks/bench/task.star --arg model=model-a
   pumpkin controller boot
+  sudo ./pumpkin/bin/pumpkin controller install
 
 Exit status:
-  0  The job's command, or the boot, has ended as it should.
+  0  The job's command, the boot or the install has ended as it should.
   1  An error, which a `pumpkin:` line on the standard error says.
   2  A usage error.";
 
