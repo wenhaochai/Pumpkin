@@ -8,6 +8,7 @@ use std::process::ExitCode;
 use std::time::{Duration, SystemTime};
 
 use stdx::Context as _;
+use stdx::process::Failure;
 
 use super::{command, ran, run};
 use crate::controller::USER;
@@ -71,7 +72,12 @@ fn ssh() -> Result<bool, String> {
         return Ok(false);
     }
     let args = [&["show-session", "--property=Service", "--value"], &ids[..]].concat();
-    let shown = run(command("loginctl", &args)).map_err(|failure| failure.to_string())?;
+    let shown = match run(command("loginctl", &args)) {
+        Ok(shown) => shown,
+        // As when a session listed has closed since: the others may still be SSH's.
+        Err(Failure::Exited { .. }) => return Ok(true),
+        Err(failure) => return Err(failure.to_string()),
+    };
     let shown = stdx::process::printed(shown)?;
     Ok(shown.lines().any(|service| service == "sshd"))
 }

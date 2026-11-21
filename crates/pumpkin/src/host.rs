@@ -137,15 +137,26 @@ pub(crate) fn install(name: &Name, region: &Region) -> Result<ExitCode, String> 
     }
     units(changed)?;
     members::copy(name, region)?;
-    let mut sshd = false;
+    let mut written = Vec::new();
     for (file, text) in SSHD {
-        let filled = fill(text, name, region);
-        sshd |= wrote(&Path::new(SSHD_DIR).join(file), filled.as_bytes(), 0o644)?;
+        let path = Path::new(SSHD_DIR).join(file);
+        if wrote(&path, fill(text, name, region).as_bytes(), 0o644)? {
+            written.push(path);
+        }
     }
-    if sshd {
-        // Ubuntu's `ssh.service` checks the configuration before its reload signals `sshd`, and
-        // the next connection starts an `sshd` that isn't running, as `ssh.socket` does.
-        systemctl(&["try-reload-or-restart", "ssh.service"])?;
+    if written.is_empty() {
+        return Ok(ExitCode::SUCCESS);
+    }
+    // Ubuntu's `ssh.service` checks the configuration before its reload signals `sshd`, and the
+    // next connection starts an `sshd` that isn't running, as `ssh.socket` does.
+    if let Err(error) = systemctl(&["try-reload-or-restart", "ssh.service"]) {
+        // So that the next install writes them again, and reloads `sshd`.
+        for path in &written {
+            fs::remove_file(path).context(path.display())?;
+        }
+        return Err(format!(
+            "{error}; so `sshd` runs without the drop-ins written, which are removed again"
+        ));
     }
     Ok(ExitCode::SUCCESS)
 }
@@ -220,24 +231,28 @@ fn getent(database: &str, key: &str) -> Result<Option<String>, String> {
     }
 }
 
-/// Reloads systemd's units if any changed, and enables and starts those to be, unless they are.
+/// Reloads systemd's units if any changed, enables each to be enabled that isn't, and starts those
+/// to be started, which starts none that runs.
 // A reload sets a waiting timer by its new file, so a timer that changed needs no restart:
 // https://github.com/systemd/systemd/blob/e8dc52766e1fdb4f8c09c3ab654d1270e1090c8d/src/core/timer.c#L306-L321
 fn units(changed: bool) -> Result<(), String> {
     if changed {
         systemctl(&["daemon-reload"])?;
     }
-    let asked = [&["is-enabled", "--quiet"], &ENABLED[..]].concat();
-    match run(command("systemctl", &asked)) {
-        Ok(_) => return Ok(()),
-        // Not 0, as some unit isn't enabled.
-        Err(Failure::Exited { .. }) => {}
-        Err(failure) => return Err(failure.to_string()),
+    let mut disabled = Vec::new();
+    // One unit a call, as `is-enabled` exits with 0 if any of those it is given is enabled.
+    for unit in ENABLED {
+        match run(command("systemctl", &["is-enabled", "--quiet", unit])) {
+            Ok(_) => {}
+            Err(Failure::Exited { .. }) => disabled.push(unit),
+            Err(failure) => return Err(failure.to_string()),
+        }
     }
-    systemctl(&[&["enable"], &ENABLED[..]].concat())?;
-    systemctl(&[&["start"], &STARTED[..]].concat())?;
-    say(format_args!("enabled {}", ENABLED.join(" ")));
-    Ok(())
+    if !disabled.is_empty() {
+        systemctl(&[&["enable"], &disabled[..]].concat())?;
+        say(format_args!("enabled {}", disabled.join(" ")));
+    }
+    systemctl(&[&["start"], &STARTED[..]].concat())
 }
 
 fn systemctl(args: &[&str]) -> Result<(), String> {

@@ -99,7 +99,7 @@ A controller made before `members` gets the parameter and the controller role's 
 the apply, but nothing on the controller: its admin runs, once the apply has made
 `/pumpkin-<name>/members`, the install of a release that knows members, as "Changes" says. It
 copies the list first, and fails, changing nothing in `sshd`, if it can't; it then admits only
-those keys. Check, as the install leaves it, that `sudo ssh-keygen -l -f /etc/ssh/pumpkin/members`
+those keys. Check, as the install leaves it, that `ssh-keygen -l -f /etc/ssh/pumpkin/members`
 names each member's keys, and that `pumpkin ls` reaches it from a member's machine. The keys that
 members enrolled before, in `~pumpkin/.ssh/authorized_keys`, then reach it no more.
 
@@ -154,6 +154,8 @@ sudo pumpkin/bin/pumpkin controller install --name <name> --region <region>
 ```
 
 Set `pumpkin_release` to that line too, which a controller made later installs at its first boot.
+A first boot that fails powers the controller off 30 minutes later: `/var/log/cloud-init-output.log`
+there says why, and `terraform apply -replace=aws_instance.controller`, once fixed, makes it again.
 The boot runs each job install that published a `bin/pumpkin-boot` link. Older installs need
 their matching client to reap subsequent jobs. Sandboxes that remain unreachable expire at the
 run's hard end.

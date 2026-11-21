@@ -5,8 +5,8 @@
 
 use std::collections::BTreeSet;
 use std::fmt::Write as _;
-use std::fs::DirBuilder;
-use std::os::unix::fs::DirBuilderExt as _;
+use std::fs;
+use std::os::unix::fs::PermissionsExt as _;
 use std::path::Path;
 use std::process::ExitCode;
 
@@ -14,8 +14,8 @@ use aws::{Cli, Region};
 use stdx::Context as _;
 
 use crate::controller::Name;
-use crate::link;
 use crate::member::Member;
+use crate::{link, say};
 
 /// The file of the members' keys, which `sshd` reads.
 pub(super) const MEMBERS: &str = "/etc/ssh/pumpkin/members";
@@ -36,9 +36,18 @@ pub(super) fn copy(name: &Name, region: &Region) -> Result<(), String> {
     let keys = keys(&list).map_err(|why| {
         format!("the members' keys, SSM parameter `{parameter}`, {why}, so none is copied")
     })?;
+    // Searchable by the controller's user, as `sshd` reads the file as that user.
     let dir = Path::new(MEMBERS).parent().unwrap_or(Path::new("/"));
-    let made = DirBuilder::new().recursive(true).mode(0o755).create(dir);
-    made.context(dir.display())?;
+    fs::create_dir_all(dir).context(dir.display())?;
+    let mode = fs::metadata(dir)
+        .context(dir.display())?
+        .permissions()
+        .mode();
+    if mode & 0o7777 != 0o755 {
+        let set = fs::set_permissions(dir, fs::Permissions::from_mode(0o755));
+        set.context(dir.display())?;
+        say(format_args!("made {} 0755", dir.display()));
+    }
     super::wrote(Path::new(MEMBERS), keys.as_bytes(), 0o644)?;
     Ok(())
 }

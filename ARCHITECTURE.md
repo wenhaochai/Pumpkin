@@ -697,7 +697,7 @@ of its own that it is handed as it connects. Outside it are only the configurati
 credentials, which it reads; the runs' records, where `--runs` names another directory; the files
 that `fmt` and `lock` rewrite, which their command lines name; the Docker engine's images and its
 ledger of CPUs, which every run on the engine shares; and the machine's key to its controllers,
-the member's credential, which their admin enrols,
+the member's credential, which their admin lists,
 with the host keys it pinned. On a controller, below the controller user's home, as the `job`
 module lays out, the jobs also keep the store of the files that clients sent, the trees of links
 into it and each job's own directory, and its `.pumpkin` keeps the installs of `serve` that the

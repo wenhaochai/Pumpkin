@@ -6,6 +6,7 @@
 use std::fs::{self, OpenOptions};
 use std::io::{self, Write as _};
 use std::os::unix::fs::OpenOptionsExt as _;
+use std::path::{Path, PathBuf};
 use std::process::{ExitCode, Stdio};
 
 use stdx::Context as _;
@@ -19,30 +20,10 @@ use crate::workspace;
 /// then says, else 0.
 pub(crate) fn boot_all() -> Result<ExitCode, String> {
     let home = crate::home("run it as the controller's user, whose home holds the builds")?;
-    let installs = home.join(workspace::DIR);
-    let entries = match fs::read_dir(&installs) {
-        Ok(entries) => entries,
-        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(ExitCode::SUCCESS),
-        Err(error) => return Err(error).context(installs.display()),
-    };
-    let mut boots = Vec::new();
-    for entry in entries {
-        let boot = entry
-            .context(installs.display())?
-            .path()
-            .join("bin")
-            .join(BOOT_LINK);
-        // A link that leads nowhere is a boot that fails, which the log says.
-        match fs::symlink_metadata(&boot) {
-            Ok(_) => boots.push(boot),
-            Err(error) if error.kind() == io::ErrorKind::NotFound => {}
-            Err(error) => return Err(error).context(boot.display()),
-        }
-    }
-    if boots.is_empty() {
+    let boots = boots(&home);
+    if boots.as_ref().is_ok_and(Vec::is_empty) {
         return Ok(ExitCode::SUCCESS);
     }
-    boots.sort();
     let path = home.join(BOOT_LOG);
     let opened = OpenOptions::new()
         .append(true)
@@ -50,6 +31,14 @@ pub(crate) fn boot_all() -> Result<ExitCode, String> {
         .mode(0o600)
         .open(&path);
     let mut log = opened.context(path.display())?;
+    let boots = match boots {
+        Ok(boots) => boots,
+        Err(error) => {
+            // In the log too, whose end `serve` reports as the boot's failure.
+            let _ = writeln!(log, "pumpkin: {error}");
+            return Err(error);
+        }
+    };
     let mut failed = Vec::new();
     for boot in boots {
         let mut command = stdx::process::command(&boot, Environment::Inherited);
@@ -75,4 +64,27 @@ pub(crate) fn boot_all() -> Result<ExitCode, String> {
     let failed = failed.join(" ");
     writeln!(log, "controller boot failed for {failed}").context(path.display())?;
     Ok(ExitCode::FAILURE)
+}
+
+/// The boot links of the builds installed below `home`, in order.
+fn boots(home: &Path) -> Result<Vec<PathBuf>, String> {
+    let installs = home.join(workspace::DIR);
+    let entries = match fs::read_dir(&installs) {
+        Ok(entries) => entries,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(error) => return Err(error).context(installs.display()),
+    };
+    let mut boots = Vec::new();
+    for entry in entries {
+        let entry = entry.context(installs.display())?;
+        let boot = entry.path().join("bin").join(BOOT_LINK);
+        // A link that leads nowhere is a boot that fails, which the log says.
+        match fs::symlink_metadata(&boot) {
+            Ok(_) => boots.push(boot),
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+            Err(error) => return Err(error).context(boot.display()),
+        }
+    }
+    boots.sort();
+    Ok(boots)
 }

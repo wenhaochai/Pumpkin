@@ -33,14 +33,16 @@ write_files:
     content: |
       {"features": {"containerd-snapshotter": true}}
 
-# cloud-init runs these as one script, which stops at the first failure. AWS CLI v2's archive,
-# whose SHA-256 is that of the one AWS's signature verifies (key FB5D B77F D5C1 18B8 0511 ADA8
-# A631 0ACC 4672 475C); then Pumpkin's, whose SHA-256 is the third word of the `.pumpkinversion`
-# line, after the tag and the commit, and whose install arms the idle stop before the rest; then
-# uv's, whose SHA-256 is the one its release publishes beside it.
+# cloud-init runs these as one script, which stops at the first failure and then powers the
+# controller off in 30 minutes, so that one whose first boot failed, which cloud-init never runs
+# again, costs no more than its volume. AWS CLI v2's archive, whose SHA-256 is that of the one
+# AWS's signature verifies (key FB5D B77F D5C1 18B8 0511 ADA8 A631 0ACC 4672 475C); Pumpkin's,
+# whose SHA-256 is the third word of the `.pumpkinversion` line, after the tag and the commit;
+# and uv's, whose SHA-256 is the one its release publishes beside it.
 runcmd:
   - |
     set -o errexit
+    trap '[ $? -eq 0 ] || shutdown --poweroff +30 "the first boot of the controller failed"' EXIT
     cd "$(mktemp --directory)"
     curl --fail --silent --show-error --location --proto '=https' --output awscli.zip \
         https://awscli.amazonaws.com/awscli-exe-linux-x86_64-${aws_cli_version}.zip
