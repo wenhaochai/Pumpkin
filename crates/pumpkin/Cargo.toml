@@ -16,6 +16,7 @@ docker = { path = "../../providers/docker" }
 ec2 = { path = "../../providers/ec2" }
 engine = { path = "../engine" }
 gateway = { path = "../gateway" }
+install = { path = "../install" }
 lang = { path = "../lang" }
 library = { path = "../library" }
 modal = { path = "../../providers/modal" }

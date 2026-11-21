@@ -1,0 +1,13 @@
+[package]
+name = "install"
+version.workspace = true
+description = "The files of a Pumpkin install: `pumpkin` and those beside it in `bin/`"
+edition.workspace = true
+publish.workspace = true
+
+[lib]
+test = false
+doctest = false
+
+[lints]
+workspace = true

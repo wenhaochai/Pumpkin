@@ -14,19 +14,9 @@ use super::{AGAIN, Found, Located, OPENINGS, Reached, SHORT_TIMEOUT, when};
 use crate::link::{self, Link, Request, Unanswered};
 use crate::{manifest, say, workspace};
 
-// What `cargo xtask build` lays out beside `pumpkin` in `bin/` (its `built`, in
-// `xtask/src/main.rs`, which this mirrors), of which a build may lack some.
-const BESIDE: [&str; 5] = [
-    "buildifier",
-    "ec2-boot",
-    "pumpkin-modal.py",
-    "pumpkin-modal.py.lock",
-    "sandboxd",
-];
-
 /// This build's files, which the controller installs whole and runs the `pumpkin` of as `serve`:
-/// its executable, and whichever of `BESIDE` lie beside it, as they are, so that a `pumpkin` run
-/// from cargo's `target/debug` brings that directory's debug builds.
+/// its executable, and whichever of an install's other files lie beside it, as they are, so that
+/// a `pumpkin` run from cargo's `target/debug` brings that directory's debug builds.
 pub(super) struct Build {
     files: Vec<(&'static str, PathBuf)>,
     pub(super) hashed: manifest::Hashed,
@@ -36,29 +26,35 @@ impl Build {
     /// Hashes this build's files; `expected` ends the message of a failure to find its executable.
     pub(super) fn of_this(expected: &str) -> Result<Self, String> {
         let exe = workspace::exe(expected)?;
-        let mut files = vec![("pumpkin", exe.clone())];
-        for name in BESIDE {
-            let path = exe.with_file_name(name);
+        let mut files = vec![(install::File::Pumpkin, exe.clone())];
+        let beside =
+            (install::File::ALL.into_iter()).filter(|&file| file != install::File::Pumpkin);
+        for file in beside {
+            let path = exe.with_file_name(file.name());
             if path.try_exists().context(path.display())? {
-                files.push((name, path));
+                files.push((file, path));
             }
         }
         let mut entries = Vec::new();
         let mut sources = BTreeMap::new();
-        for &(name, ref path) in &files {
+        for &(file, ref path) in &files {
             let (digest, size_bytes) = manifest::file_sha256(path)?;
-            let kind = match name {
-                "pumpkin-modal.py" | "pumpkin-modal.py.lock" => manifest::Kind::File,
-                _ => manifest::Kind::Executable,
+            let kind = if file.is_executable() {
+                manifest::Kind::Executable
+            } else {
+                manifest::Kind::File
             };
             entries.push(manifest::Entry {
                 kind,
                 digest: digest.clone(),
                 size_bytes,
-                path: name.to_owned(),
+                path: file.name().to_owned(),
             });
             sources.insert(digest, manifest::Source::File(path.clone()));
         }
+        let mut files: Vec<_> = (files.into_iter())
+            .map(|(file, path)| (file.name(), path))
+            .collect();
         files.sort_unstable_by_key(|&(name, _)| name);
         let manifest = manifest::Manifest::new(entries);
         let hashed = manifest::Hashed { manifest, sources };

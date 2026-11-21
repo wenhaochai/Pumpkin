@@ -11,6 +11,7 @@ path = "src/main.rs"
 test = false
 
 [dependencies]
+install = { path = "../crates/install" }
 proc-macro2 = { version = "1.0.107", default-features = false, features = ["span-locations"] }
 serde_json.workspace = true
 sha2.workspace = true

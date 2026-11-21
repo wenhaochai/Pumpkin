@@ -1,5 +1,5 @@
 <!-- cargo xtask figures writes this file from `cargo metadata`: edit xtask/src/figure.rs, not this -->
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 801 484" width="801" height="484" role="img" aria-labelledby="title desc">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 799 484" width="799" height="484" role="img" aria-labelledby="title desc">
 <title id="title">How the workspace's crates depend on one another</title>
 <desc id="desc">A box for each crate of the workspace, shaded if it builds a binary, in rows: an arrow leads from a crate down to each it depends on, but for a build or a development dependency, and for one that another of its arrows already leads to.</desc>
 <style>
@@ -19,81 +19,85 @@ text{font:12.5px system-ui,-apple-system,"Segoe UI",Helvetica,Arial,sans-serif;f
 .head{fill:var(--line)}
 </style>
 <defs><marker id="head" viewBox="0 0 8 8" refX="8" refY="4" markerWidth="8" markerHeight="8" orient="auto"><path class="head" d="M0 0L8 4L0 8z"/></marker></defs>
-<rect class="bg" width="801" height="484"/>
-<path class="arrow" d="M348 216C348 241 352 241 352 267" marker-end="url(#head)"/>
-<path class="arrow" d="M686 216C686 242 572 242 572 268V300C572 326 514 326 514 352V384C514 409 407 409 407 435" marker-end="url(#head)"/>
-<path class="arrow" d="M307 132C307 158 294 158 294 184V216C294 241 328 241 328 267" marker-end="url(#head)"/>
-<path class="arrow" d="M331 132C331 158 536 158 536 184V216C536 241 476 241 476 267" marker-end="url(#head)"/>
-<path class="arrow" d="M393 132C393 157 336 157 336 183" marker-end="url(#head)"/>
-<path class="arrow" d="M417 132C417 158 569 158 569 184V216C569 241 491 241 491 267" marker-end="url(#head)"/>
-<path class="arrow" d="M268 384C268 409 337 409 337 435" marker-end="url(#head)"/>
-<path class="arrow" d="M239 384C239 409 132 409 132 435" marker-end="url(#head)"/>
-<path class="arrow" d="M358 300C358 325 578 325 578 351" marker-end="url(#head)"/>
-<path class="arrow" d="M340 300C340 326 418 326 418 352V384C418 409 365 409 365 435" marker-end="url(#head)"/>
-<path class="arrow" d="M322 300C322 326 20 326 20 352V384C20 409 90 409 90 435" marker-end="url(#head)"/>
-<path class="arrow" d="M263 300C263 326 462 326 462 352V384C462 409 393 409 393 435" marker-end="url(#head)"/>
-<path class="arrow" d="M236 300C236 325 74 325 74 351" marker-end="url(#head)"/>
-<path class="arrow" d="M715 132C715 158 781 158 781 184V216C781 242 657 242 657 268V300C657 325 602 325 602 351" marker-end="url(#head)"/>
-<path class="arrow" d="M691 132C691 158 759 158 759 184V216C759 242 619 242 619 268V300C619 326 536 326 536 352V384C536 409 421 409 421 435" marker-end="url(#head)"/>
-<path class="arrow" d="M479 132C479 157 360 157 360 183" marker-end="url(#head)"/>
-<path class="arrow" d="M503 132C503 158 601 158 601 184V216C601 241 505 241 505 267" marker-end="url(#head)"/>
-<path class="arrow" d="M491 300C491 326 440 326 440 352V384C440 409 379 409 379 435" marker-end="url(#head)"/>
-<path class="arrow" d="M433 48C433 73 319 73 319 99" marker-end="url(#head)"/>
-<path class="arrow" d="M447 48C447 73 405 73 405 99" marker-end="url(#head)"/>
-<path class="arrow" d="M489 48C489 73 703 73 703 99" marker-end="url(#head)"/>
-<path class="arrow" d="M419 48C419 73 229 73 229 99" marker-end="url(#head)"/>
-<path class="arrow" d="M461 48C461 73 491 73 491 99" marker-end="url(#head)"/>
-<path class="arrow" d="M475 48C475 73 581 73 581 99" marker-end="url(#head)"/>
-<path class="arrow" d="M240 216C240 241 236 241 236 267" marker-end="url(#head)"/>
-<path class="arrow" d="M601 132C601 157 686 157 686 183" marker-end="url(#head)"/>
-<path class="arrow" d="M581 132C581 158 624 158 624 184V216C624 241 520 241 520 267" marker-end="url(#head)"/>
-<path class="arrow" d="M561 132C561 157 240 157 240 183" marker-end="url(#head)"/>
-<path class="arrow" d="M370 384C370 409 351 409 351 435" marker-end="url(#head)"/>
-<path class="arrow" d="M341 384C341 409 146 409 146 435" marker-end="url(#head)"/>
-<path class="arrow" d="M438 216C438 241 263 241 263 267" marker-end="url(#head)"/>
-<path class="arrow" d="M478 216C478 241 461 241 461 267" marker-end="url(#head)"/>
-<path class="arrow" d="M74 384C74 409 104 409 104 435" marker-end="url(#head)"/>
-<path class="arrow" d="M160 384C160 409 118 409 118 435" marker-end="url(#head)"/>
-<rect class="hot" x="405" y="16" width="98" height="32" rx="6"/>
-<text class="code mid" x="454" y="36">pumpkin</text>
-<rect class="box" x="283" y="100" width="72" height="32" rx="6"/>
-<text class="code mid" x="319" y="120">docker</text>
-<rect class="box" x="369" y="100" width="72" height="32" rx="6"/>
-<text class="code mid" x="405" y="120">ec2</text>
-<rect class="box" x="667" y="100" width="72" height="32" rx="6"/>
-<text class="code mid" x="703" y="120">lang</text>
-<rect class="box" x="189" y="100" width="80" height="32" rx="6"/>
-<text class="code mid" x="229" y="120">library</text>
-<rect class="box" x="455" y="100" width="72" height="32" rx="6"/>
-<text class="code mid" x="491" y="120">modal</text>
-<rect class="box" x="541" y="100" width="80" height="32" rx="6"/>
-<text class="code mid" x="581" y="120">runtime</text>
-<rect class="box" x="312" y="184" width="72" height="32" rx="6"/>
-<text class="code mid" x="348" y="204">aws</text>
-<rect class="box" x="642" y="184" width="88" height="32" rx="6"/>
-<text class="code mid" x="686" y="204">decision</text>
-<rect class="box" x="204" y="184" width="72" height="32" rx="6"/>
-<text class="code mid" x="240" y="204">route</text>
-<rect class="box" x="398" y="184" width="120" height="32" rx="6"/>
-<text class="code mid" x="458" y="204">test-support</text>
-<rect class="box" x="304" y="268" width="72" height="32" rx="6"/>
-<text class="code mid" x="340" y="288">engine</text>
-<rect class="box" x="210" y="268" width="80" height="32" rx="6"/>
-<text class="code mid" x="250" y="288">gateway</text>
-<rect class="box" x="447" y="268" width="88" height="32" rx="6"/>
-<text class="code mid" x="491" y="288">provider</text>
-<rect class="hot" x="210" y="352" width="88" height="32" rx="6"/>
-<text class="code mid" x="254" y="372">ec2-boot</text>
-<rect class="box" x="554" y="352" width="72" height="32" rx="6"/>
-<text class="code mid" x="590" y="372">recipe</text>
-<rect class="hot" x="312" y="352" width="88" height="32" rx="6"/>
-<text class="code mid" x="356" y="372">sandboxd</text>
+<rect class="bg" width="799" height="484"/>
+<path class="arrow" d="M334 216C334 241 331 241 331 267" marker-end="url(#head)"/>
+<path class="arrow" d="M666 216C666 242 518 242 518 268V300C518 326 398 326 398 352V384C398 409 289 409 289 435" marker-end="url(#head)"/>
+<path class="arrow" d="M290 132C290 158 280 158 280 184V216C280 241 307 241 307 267" marker-end="url(#head)"/>
+<path class="arrow" d="M314 132C314 158 522 158 522 184V216C522 241 441 241 441 267" marker-end="url(#head)"/>
+<path class="arrow" d="M376 132C376 157 322 157 322 183" marker-end="url(#head)"/>
+<path class="arrow" d="M400 132C400 158 554 158 554 184V216C554 241 456 241 456 267" marker-end="url(#head)"/>
+<path class="arrow" d="M182 384C182 409 219 409 219 435" marker-end="url(#head)"/>
+<path class="arrow" d="M153 384C153 409 131 409 131 435" marker-end="url(#head)"/>
+<path class="arrow" d="M337 300C337 325 588 325 588 351" marker-end="url(#head)"/>
+<path class="arrow" d="M319 300C319 326 332 326 332 352V384C332 409 247 409 247 435" marker-end="url(#head)"/>
+<path class="arrow" d="M301 300C301 326 20 326 20 352V384C20 409 103 409 103 435" marker-end="url(#head)"/>
+<path class="arrow" d="M242 300C242 326 376 326 376 352V384C376 409 275 409 275 435" marker-end="url(#head)"/>
+<path class="arrow" d="M215 300C215 325 74 325 74 351" marker-end="url(#head)"/>
+<path class="arrow" d="M666 132C666 158 779 158 779 184V216C779 242 664 242 664 268V300C664 325 612 325 612 351" marker-end="url(#head)"/>
+<path class="arrow" d="M642 132C642 158 728 158 728 184V216C728 242 550 242 550 268V300C550 326 420 326 420 352V384C420 409 303 409 303 435" marker-end="url(#head)"/>
+<path class="arrow" d="M462 132C462 157 346 157 346 183" marker-end="url(#head)"/>
+<path class="arrow" d="M486 132C486 158 582 158 582 184V216C582 241 470 241 470 267" marker-end="url(#head)"/>
+<path class="arrow" d="M456 300C456 326 354 326 354 352V384C354 409 261 409 261 435" marker-end="url(#head)"/>
+<path class="arrow" d="M443 48C443 73 302 73 302 99" marker-end="url(#head)"/>
+<path class="arrow" d="M457 48C457 73 388 73 388 99" marker-end="url(#head)"/>
+<path class="arrow" d="M513 48C513 74 708 74 708 100V132C708 158 757 158 757 184V216C757 242 626 242 626 268V300C626 326 546 326 546 352V384C546 409 476 409 476 435" marker-end="url(#head)"/>
+<path class="arrow" d="M499 48C499 73 654 73 654 99" marker-end="url(#head)"/>
+<path class="arrow" d="M429 48C429 73 212 73 212 99" marker-end="url(#head)"/>
+<path class="arrow" d="M471 48C471 73 474 73 474 99" marker-end="url(#head)"/>
+<path class="arrow" d="M485 48C485 73 564 73 564 99" marker-end="url(#head)"/>
+<path class="arrow" d="M226 216C226 241 215 241 215 267" marker-end="url(#head)"/>
+<path class="arrow" d="M584 132C584 157 666 157 666 183" marker-end="url(#head)"/>
+<path class="arrow" d="M564 132C564 158 604 158 604 184V216C604 241 485 241 485 267" marker-end="url(#head)"/>
+<path class="arrow" d="M544 132C544 157 226 157 226 183" marker-end="url(#head)"/>
+<path class="arrow" d="M284 384C284 409 233 409 233 435" marker-end="url(#head)"/>
+<path class="arrow" d="M255 384C255 409 145 409 145 435" marker-end="url(#head)"/>
+<path class="arrow" d="M424 216C424 241 242 241 242 267" marker-end="url(#head)"/>
+<path class="arrow" d="M464 216C464 241 426 241 426 267" marker-end="url(#head)"/>
+<path class="arrow" d="M74 384C74 409 117 409 117 435" marker-end="url(#head)"/>
+<path class="arrow" d="M486 384C486 409 449 409 449 435" marker-end="url(#head)"/>
+<path class="arrow" d="M462 384C462 409 159 409 159 435" marker-end="url(#head)"/>
+<rect class="hot" x="415" y="16" width="112" height="32" rx="6"/>
+<text class="code mid" x="471" y="36">pumpkin</text>
+<rect class="box" x="266" y="100" width="72" height="32" rx="6"/>
+<text class="code mid" x="302" y="120">docker</text>
+<rect class="box" x="352" y="100" width="72" height="32" rx="6"/>
+<text class="code mid" x="388" y="120">ec2</text>
+<rect class="box" x="618" y="100" width="72" height="32" rx="6"/>
+<text class="code mid" x="654" y="120">lang</text>
+<rect class="box" x="172" y="100" width="80" height="32" rx="6"/>
+<text class="code mid" x="212" y="120">library</text>
+<rect class="box" x="438" y="100" width="72" height="32" rx="6"/>
+<text class="code mid" x="474" y="120">modal</text>
+<rect class="box" x="524" y="100" width="80" height="32" rx="6"/>
+<text class="code mid" x="564" y="120">runtime</text>
+<rect class="box" x="298" y="184" width="72" height="32" rx="6"/>
+<text class="code mid" x="334" y="204">aws</text>
+<rect class="box" x="622" y="184" width="88" height="32" rx="6"/>
+<text class="code mid" x="666" y="204">decision</text>
+<rect class="box" x="190" y="184" width="72" height="32" rx="6"/>
+<text class="code mid" x="226" y="204">route</text>
+<rect class="box" x="384" y="184" width="120" height="32" rx="6"/>
+<text class="code mid" x="444" y="204">test-support</text>
+<rect class="box" x="283" y="268" width="72" height="32" rx="6"/>
+<text class="code mid" x="319" y="288">engine</text>
+<rect class="box" x="189" y="268" width="80" height="32" rx="6"/>
+<text class="code mid" x="229" y="288">gateway</text>
+<rect class="box" x="412" y="268" width="88" height="32" rx="6"/>
+<text class="code mid" x="456" y="288">provider</text>
+<rect class="hot" x="124" y="352" width="88" height="32" rx="6"/>
+<text class="code mid" x="168" y="372">ec2-boot</text>
+<rect class="box" x="564" y="352" width="72" height="32" rx="6"/>
+<text class="code mid" x="600" y="372">recipe</text>
+<rect class="hot" x="226" y="352" width="88" height="32" rx="6"/>
+<text class="code mid" x="270" y="372">sandboxd</text>
 <rect class="box" x="38" y="352" width="72" height="32" rx="6"/>
 <text class="code mid" x="74" y="372">tls</text>
-<rect class="hot" x="124" y="352" width="72" height="32" rx="6"/>
-<text class="code mid" x="160" y="372">xtask</text>
-<rect class="box" x="323" y="436" width="112" height="32" rx="6"/>
-<text class="code mid" x="379" y="456">schema</text>
-<rect class="box" x="76" y="436" width="84" height="32" rx="6"/>
-<text class="code mid" x="118" y="456">stdx</text>
+<rect class="hot" x="438" y="352" width="72" height="32" rx="6"/>
+<text class="code mid" x="474" y="372">xtask</text>
+<rect class="box" x="423" y="436" width="80" height="32" rx="6"/>
+<text class="code mid" x="463" y="456">install</text>
+<rect class="box" x="205" y="436" width="112" height="32" rx="6"/>
+<text class="code mid" x="261" y="456">schema</text>
+<rect class="box" x="89" y="436" width="84" height="32" rx="6"/>
+<text class="code mid" x="131" y="456">stdx</text>
 </svg>

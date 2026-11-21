@@ -122,8 +122,16 @@ fn check(sh: &Shell, commit: &str) -> Result<()> {
     if sh.read_file("commit")? != format!("{commit}\n") {
         return Err(format!("archived commit differs from the checkout's {commit}").into());
     }
-    for program in ["pumpkin", "sandboxd", "ec2-boot", "buildifier"] {
-        let elf = cmd!(sh, "file --brief bin/{program}")
+    for file in install::File::ALL {
+        let name = file.name();
+        if !file.is_executable() {
+            let path = sh.current_dir().join("bin").join(name);
+            if fs::metadata(&path).context(path.display())?.len() == 0 {
+                return Err(format!("archived bin/{name} is empty").into());
+            }
+            continue;
+        }
+        let elf = cmd!(sh, "file --brief bin/{name}")
             .env("LC_ALL", "C")
             .read()?;
         if !(elf.starts_with("ELF 64-bit")
@@ -132,13 +140,7 @@ fn check(sh: &Shell, commit: &str) -> Result<()> {
                 .iter()
                 .any(|kind| elf.contains(kind)))
         {
-            return Err(format!("bin/{program} is {elf}: expected a static x86-64 ELF").into());
-        }
-    }
-    for helper in ["pumpkin-modal.py", "pumpkin-modal.py.lock"] {
-        let path = sh.current_dir().join("bin").join(helper);
-        if fs::metadata(&path).context(path.display())?.len() == 0 {
-            return Err(format!("archived bin/{helper} is empty").into());
+            return Err(format!("bin/{name} is {elf}: expected a static x86-64 ELF").into());
         }
     }
     cmd!(sh, "bin/buildifier --version").run()?;

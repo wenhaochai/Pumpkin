@@ -645,25 +645,21 @@ fn build(cargo: &Cargo, root: Option<PathBuf>, target: &str) -> Result<()> {
     // The Modal provider's helper and its lock, which `pumpkin` finds beside it, under the
     // names it looks for.
     let helper = Path::new(env!("CARGO_MANIFEST_DIR")).join("../providers/modal/helper");
-    let mut built = vec![
-        ("pumpkin", release_binary(cargo, "pumpkin", target)?, 0o755),
-        ("buildifier", star::buildifier(cargo)?, 0o755),
-    ];
+    let pumpkin = release_binary(cargo, "pumpkin", target)?;
+    let buildifier = star::buildifier(cargo)?;
     let sandboxd = sandboxd(cargo)?;
-    built.extend([
-        ("ec2-boot", sandboxd.with_file_name("ec2-boot"), 0o755),
-        ("sandboxd", sandboxd, 0o755),
-        ("pumpkin-modal.py", helper.join("pumpkin-modal.py"), 0o644),
-        (
-            "pumpkin-modal.py.lock",
-            helper.join("pumpkin-modal.py.lock"),
-            0o644,
-        ),
-    ]);
     fs::create_dir_all(&bin)
         .map_err(|error| format!("making {} failed: {error}", bin.display()))?;
-    for (name, from, mode) in built {
-        let to = install_file(&bin, name, &from, mode)?;
+    for file in install::File::ALL {
+        let from = match file {
+            install::File::Pumpkin => pumpkin.clone(),
+            install::File::Buildifier => buildifier.clone(),
+            install::File::Ec2Boot => sandboxd.with_file_name(file.name()),
+            install::File::Sandboxd => sandboxd.clone(),
+            install::File::ModalHelper | install::File::ModalLock => helper.join(file.name()),
+        };
+        let mode = if file.is_executable() { 0o755 } else { 0o644 };
+        let to = install_file(&bin, file.name(), &from, mode)?;
         println!("{}", to.display());
     }
     let path = env::var_os("PATH").unwrap_or_default();
