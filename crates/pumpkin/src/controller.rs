@@ -32,7 +32,7 @@ use self::aws::{Located, find, kept};
 use crate::workspace::Workspace;
 use crate::{config, next, say};
 
-const USER: &str = "pumpkin";
+pub(crate) const USER: &str = "pumpkin";
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 const SHORT_TIMEOUT: Duration = Duration::from_mins(10);
 

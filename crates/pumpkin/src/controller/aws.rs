@@ -15,6 +15,7 @@ use stdx::process::Environment;
 use stdx::{Context as _, Deadline};
 
 use super::{Name, Reached, SHORT_TIMEOUT, USER, bounded, finished, locked};
+use crate::iam::CLIENT;
 use crate::say;
 
 // The tag that `deploy/aws` puts on the controller's instance, valued with the controller's name.
@@ -130,8 +131,7 @@ pub(super) fn find(region: &Region, name: &Name) -> Result<Located, String> {
 }
 
 fn instances(cli: &Cli, filter: &str) -> Result<Vec<Instance>, String> {
-    let args = ["ec2", "describe-instances", "--filters", filter];
-    let found: Reservations = cli.json(&args, Bound::Call)?;
+    let found: Reservations = cli.json(&CLIENT.describe, &["--filters", filter], Bound::Call)?;
     Ok(found
         .reservations
         .into_iter()
@@ -181,8 +181,8 @@ pub(super) fn state(cli: &Cli, name: &Name, id: &str) -> Result<String, String> 
 
 /// Starts instance `id`, as `start-instances` does: one that runs or is starting is left so.
 pub(super) fn start(cli: &Cli, id: &str) -> Result<(), String> {
-    let start = ["ec2", "start-instances", "--instance-ids", id];
-    cli.run(&start, Bound::Call).map(drop)
+    let start = ["--instance-ids", id];
+    cli.run(&CLIENT.start, &start, Bound::Call).map(drop)
 }
 
 fn instance(cli: &Cli, name: &Name, id: &str) -> Result<Instance, String> {
@@ -299,8 +299,6 @@ impl Reached {
     pub(super) fn push(&self, at: &Located) -> Result<(), String> {
         let public = format!("file://{}", self.kept.join("key.pub").display());
         let args = [
-            "ec2-instance-connect",
-            "send-ssh-public-key",
             "--instance-id",
             &at.instance,
             "--instance-os-user",
@@ -309,6 +307,6 @@ impl Reached {
             &public,
         ];
         let cli = Cli::connect(self.region.clone())?;
-        cli.run(&args, Bound::Call).map(|_| ())
+        cli.run(&CLIENT.push_key, &args, Bound::Call).map(|_| ())
     }
 }

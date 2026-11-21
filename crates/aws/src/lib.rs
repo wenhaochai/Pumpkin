@@ -1,6 +1,9 @@
 //! AWS's command line, `aws`, as Pumpkin's providers run it ([`Cli`]), with ECR's repositories
 //! on it, and the IAM roles that providers name in their settings ([`RoleArn`]).
 //!
+//! `Cli` runs only a declared [`Call`], which states what IAM must allow of it, so a principal's
+//! policy is what its code's calls state ([`iam::policy`]).
+//!
 //! Every call `aws` makes is in the region its [`Cli`] was made for, with the credentials that
 //! `aws` finds on its own, which on an EC2 instance are the instance's role. No variable of this
 //! process's environment, such as `AWS_REGION` or `AWS_PROFILE`, steers `aws` to another region
@@ -15,6 +18,10 @@ use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use stdx::process::{self, Echo, Environment, Failure, Run};
 use stdx::{Context as _, Deadline};
+
+use crate::iam::{Call, Ecr};
+
+pub mod iam;
 
 // Every command a provider runs is one AWS answers at once, in one page. Throttled, `aws` tries
 // again ([`RETRIES`]), waiting about 7 min in all at most; it gives up on a connection, and on a
@@ -138,6 +145,9 @@ pub struct Repository {
     name: RepositoryName,
     /// Its URI, `<registry>/<name>`, which every image in it is named under.
     uri: String,
+    /// The calls on it.
+    #[serde(skip)]
+    ecr: &'static Ecr,
 }
 
 impl Repository {
@@ -249,43 +259,56 @@ impl Cli {
         &self.version
     }
 
-    /// Runs `aws` with `args`, killed at `bound`, and parses the JSON it prints.
-    pub fn json<T: DeserializeOwned>(&self, args: &[&str], bound: Bound) -> Result<T, String> {
-        serde_json::from_slice(&self.run(args, bound)?).map_err(|error| {
+    /// Runs `call` with `args`, its options, killed at `bound`, and parses the JSON it prints.
+    pub fn json<T: DeserializeOwned>(
+        &self,
+        call: &'static Call,
+        args: &[&str],
+        bound: Bound,
+    ) -> Result<T, String> {
+        serde_json::from_slice(&self.run(call, args, bound)?).map_err(|error| {
             format!(
-                "the JSON `aws {}` printed isn't of the form expected: {error}",
-                subcommand(args)
+                "the JSON `{}` printed isn't of the form expected: {error}",
+                shown(call)
             )
         })
     }
 
-    /// Runs `aws` with `args`, killed at `bound`, and returns what it prints on standard output.
-    pub fn run(&self, args: &[&str], bound: Bound) -> Result<Vec<u8>, String> {
-        let output = process::run(&mut self.command(args), bounded(bound));
+    /// Runs `call` with `args`, its options, killed at `bound`, and returns what it prints on
+    /// standard output.
+    pub fn run(&self, call: &'static Call, args: &[&str], bound: Bound) -> Result<Vec<u8>, String> {
+        let output = process::run(&mut self.command(call, args), bounded(bound));
         Ok(output.map_err(|failure| failure.to_string())?.stdout)
     }
 
-    /// Runs `aws` with `args`, killed at `bound`, and returns what it prints on standard output,
-    /// or `None` if AWS reports that what it names doesn't exist (`ResourceNotFoundException`).
-    pub fn run_found(&self, args: &[&str], bound: Bound) -> Result<Option<Vec<u8>>, String> {
+    /// Runs `call` with `args`, its options, killed at `bound`, and returns what it prints on
+    /// standard output, or `None` if AWS reports that what it names doesn't exist
+    /// (`ResourceNotFoundException`).
+    pub fn run_found(
+        &self,
+        call: &'static Call,
+        args: &[&str],
+        bound: Bound,
+    ) -> Result<Option<Vec<u8>>, String> {
         // How AWS CLI v2 writes the code of an error that AWS reports.
         let absent = "An error occurred (ResourceNotFoundException)";
-        match process::run(&mut self.command(args), bounded(bound)) {
+        match process::run(&mut self.command(call, args), bounded(bound)) {
             Ok(output) => Ok(Some(output.stdout)),
             Err(failure) if failure.reported().contains(absent) => Ok(None),
             Err(failure) => Err(failure.to_string()),
         }
     }
 
-    /// The repositories that `names` name, in their order, each described by one call, or why
-    /// AWS described none of that name.
+    /// The repositories that `names` name, in their order, each described by one call of
+    /// `ecr`'s, on which each is published, or why AWS described none of that name.
     pub fn repositories<const N: usize>(
         &self,
+        ecr: &'static Ecr,
         names: [&RepositoryName; N],
     ) -> Result<[Result<Repository, String>; N], String> {
-        let mut args = vec!["ecr", "describe-repositories", "--repository-names"];
+        let mut args = vec!["--repository-names"];
         args.extend(names.iter().map(|name| name.as_str()));
-        let EcrRepositories { repositories } = self.json(&args, Bound::Call)?;
+        let EcrRepositories { repositories } = self.json(&ecr.describe, &args, Bound::Call)?;
         Ok(names.map(|name| {
             let found =
                 (repositories.iter()).find(|repository| repository.repository_name == name.0);
@@ -298,6 +321,7 @@ impl Cli {
             Ok(Repository {
                 name: name.clone(),
                 uri: found.repository_uri.clone(),
+                ecr,
             })
         }))
     }
@@ -339,8 +363,6 @@ impl Cli {
     fn holds(&self, repository: &Repository, image: &Image) -> Result<bool, String> {
         let id = format!("imageDigest={image}");
         let mut args = vec![
-            "ecr",
-            "batch-get-image",
             "--repository-name",
             &repository.name.0,
             "--image-ids",
@@ -352,7 +374,8 @@ impl Cli {
             "looking up {image} in repository `{}` failed",
             repository.name.0
         );
-        let BatchImages { images, failures } = self.json(&args, Bound::Call).context(looking)?;
+        let found = self.json(&repository.ecr.holds, &args, Bound::Call);
+        let BatchImages { images, failures } = found.context(looking)?;
         let ours = |id: &ImageId| id.image_digest.as_deref() == Some(image.as_str());
         if images.iter().any(|found| ours(&found.image_id)) {
             return Ok(true);
@@ -388,7 +411,7 @@ impl Cli {
     ) -> Result<(), String> {
         // The password is good for the registry of the account and region `aws` calls, which
         // holds every repository there.
-        let password = self.run(&["ecr", "get-login-password"], Bound::Call)?;
+        let password = self.run(&repository.ecr.login, &[], Bound::Call)?;
         let password = String::from_utf8_lossy(&password).trim().to_owned();
         let login = Login::new(
             repository.registry().to_owned(),
@@ -401,13 +424,13 @@ impl Cli {
         pusher.push(image, &login, &repository.name.0, image.hex())
     }
 
-    fn command(&self, args: &[&str]) -> Command {
+    fn command(&self, call: &Call, args: &[&str]) -> Command {
         let mut command = aws();
         // After `args`, so that a failure is named by the command they give, as `aws` takes its
         // global options anywhere: its parser of them reads every argument, and leaves the rest
         // to the command.
         // https://github.com/aws/aws-cli/blob/7372e144ac4a20def37cc46ba60f1bcce4aec215/awscli/clidriver.py#L454-L460
-        command.args(args).args([
+        command.args(call.command()).args(args).args([
             "--no-cli-pager",
             "--output",
             "json",
@@ -433,11 +456,9 @@ fn bounded(bound: Bound) -> Run<'static> {
     Run::new(bound, Echo::Silent)
 }
 
-/// The command `args` give, such as `ec2 describe-images`, without its options, which can be
-/// long.
-fn subcommand(args: &[&str]) -> String {
-    let words = (args.iter())
-        .take(2)
-        .take_while(|word| !word.starts_with('-'));
-    words.copied().collect::<Vec<_>>().join(" ")
+/// How an error shows `call`'s command, such as `aws ec2 describe-images`, without its options,
+/// which can be long.
+fn shown(call: &Call) -> String {
+    let [service, operation] = call.command();
+    format!("aws {service} {operation}")
 }

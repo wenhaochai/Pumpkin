@@ -20,11 +20,12 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 use stdx::{Context as _, Deadline};
 
+use crate::iam::CALLS;
 use crate::user_data::user_data;
 use crate::{Ec2, InstanceClass, Reached};
 
 // The tag by which a run finds its instances, and a delete knows an instance is the run's.
-const RUN_TAG: &str = "pumpkin:run";
+pub(crate) const RUN_TAG: &str = "pumpkin:run";
 
 const ROLE_TAG: &str = "pumpkin:role";
 
@@ -137,8 +138,6 @@ impl Ec2<'_> {
         // token of its own, which keeps its own retries of the call from launching twice:
         // https://docs.aws.amazon.com/cli/latest/reference/ec2/run-instances.html
         let args = [
-            "ec2",
-            "run-instances",
             "--launch-template",
             &launch_template,
             // A shutdown, as the boot makes at its end and at the hard end, terminates the
@@ -150,8 +149,9 @@ impl Ec2<'_> {
             "--user-data",
             &uri,
         ];
-        let launched = write_private(&self.dir, &file, user_data)
-            .and_then(|()| self.reached.cli.json::<Launched>(&args, Bound::Create(by)));
+        let launched = write_private(&self.dir, &file, user_data).and_then(|()| {
+            (self.reached.cli).json::<Launched>(&CALLS.launch, &args, Bound::Create(by))
+        });
         // A file left behind holds a grant that only this user can read, and that expires with its
         // registration.
         let _ = fs::remove_file(&file);
@@ -186,8 +186,6 @@ impl Ec2<'_> {
         });
         let target = target.to_string();
         let args = [
-            "scheduler",
-            "create-schedule",
             "--group-name",
             &group.0,
             "--name",
@@ -203,7 +201,9 @@ impl Ec2<'_> {
             "--target",
             &target,
         ];
-        let made = self.reached.cli.run(&args, Bound::Create(by)).map(drop);
+        let made = (self.reached.cli)
+            .run(&CALLS.set_timer, &args, Bound::Create(by))
+            .map(drop);
         made.context(format_args!(
             "making instance `{id}`'s timer, schedule `{}/{name}`, failed",
             group.0
@@ -251,14 +251,9 @@ impl Ec2<'_> {
         if !(found.iter()).any(|found| found.instance_id == id && found.is_of(run)) {
             return Err(not_ours());
         }
-        let read = [
-            "ec2",
-            "get-console-output",
-            "--instance-id",
-            &id.0,
-            "--latest",
-        ];
-        let ConsoleOutput { output } = self.reached.cli.json(&read, Bound::Call)?;
+        let read = ["--instance-id", &id.0, "--latest"];
+        let ConsoleOutput { output } =
+            (self.reached.cli).json(&CALLS.console, &read, Bound::Call)?;
         let output = output.unwrap_or_default();
         // The boot's own lines alone, which tell of the sandbox: the kernel's, cloud-init's and the
         // shutdown's don't.
@@ -375,15 +370,12 @@ impl Reached {
     fn unset_timer(&self, run: &RunTag, id: &InstanceId) -> Result<(), String> {
         let group = &self.group.0;
         let name = timer_name(run, id);
-        let args = [
-            "scheduler",
-            "delete-schedule",
-            "--group-name",
-            group,
-            "--name",
-            &name,
-        ];
-        (self.cli.run_found(&args, Bound::Call).map(drop)).context(format_args!(
+        let args = ["--group-name", group, "--name", &name];
+        (self
+            .cli
+            .run_found(&CALLS.unset_timer, &args, Bound::Call)
+            .map(drop))
+        .context(format_args!(
             "deleting terminated instance `{id}`'s timer, schedule `{group}/{name}`, failed"
         ))
     }
@@ -427,16 +419,16 @@ impl Reached {
     }
 
     fn described(&self, filters: &[String], bound: Bound) -> Result<Vec<ListedInstance>, String> {
-        let mut args = vec!["ec2", "describe-instances", "--filters"];
+        let mut args = vec!["--filters"];
         args.extend(filters.iter().map(String::as_str));
-        let Reservations { reservations } = self.cli.json(&args, bound)?;
+        let Reservations { reservations } = self.cli.json(&CALLS.describe, &args, bound)?;
         let instances = reservations.into_iter().flat_map(|found| found.instances);
         Ok(instances.collect())
     }
 
     fn terminate(&self, id: &InstanceId, bound: Bound) -> Result<(), String> {
-        let terminate = ["ec2", "terminate-instances", "--instance-ids", &id.0];
-        (self.cli.run(&terminate, bound).map(drop)).context(format_args!(
+        let terminate = ["--instance-ids", &id.0];
+        (self.cli.run(&CALLS.terminate, &terminate, bound).map(drop)).context(format_args!(
             "instance `{id}` is left, as terminating it failed"
         ))
     }

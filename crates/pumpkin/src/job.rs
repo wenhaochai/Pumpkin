@@ -39,6 +39,7 @@ use stdx::Context as _;
 use stdx::process::Environment;
 
 use crate::controller::bounded;
+use crate::iam::JOB;
 use crate::manifest::{self, Entry, INCOMING, Kind, MANIFESTS, Manifest};
 use crate::workspace::{self, Workspace};
 use crate::{cli, config, publish, say, star};
@@ -374,8 +375,7 @@ struct Parameter {
 ///
 /// Fails if the settings set `gateway` or `upstreams`, which each job sets.
 fn assemble(cli: &Cli, parameter: &str, sent: &Path) -> Result<String, String> {
-    let got: GotParameter =
-        cli.json(&["ssm", "get-parameter", "--name", parameter], Bound::Call)?;
+    let got: GotParameter = cli.json(&JOB.settings, &["--name", parameter], Bound::Call)?;
     let named = format!("the controller's settings, SSM parameter `{parameter}`,");
     let mut tables: toml::Table = toml::from_str(&got.parameter.value)
         .map_err(|error| format!("{named} aren't TOML: {}", error.to_string().trim_end()))?;

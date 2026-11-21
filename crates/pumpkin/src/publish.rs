@@ -23,6 +23,7 @@ use std::process::ExitCode;
 use std::str::FromStr;
 use std::time::{Duration, Instant, SystemTime};
 
+use aws::iam::Call;
 use aws::{Bound, Cli, Region};
 use jiff::Timestamp;
 use provider::RunTag;
@@ -31,6 +32,7 @@ use serde::Deserialize;
 use stdx::Context as _;
 use toml::value::Datetime;
 
+use crate::iam::PUBLISH;
 use crate::view::{self, Exported, Scrub};
 use crate::{cli, say};
 
@@ -340,9 +342,9 @@ impl Publisher {
         let marked_at = mark.metadata().and_then(|metadata| metadata.modified());
         let plan = plan(export, marked_at.context(path.display())?, &exported.ids)?;
         for (index, upload) in plan.iter().enumerate() {
-            let args = upload.args(&self.export, &self.bucket);
+            let (call, args) = upload.args(&self.export, &self.bucket);
             let args: Vec<&str> = args.iter().map(String::as_str).collect();
-            self.aws.run(&args, Bound::Call).map_err(|error| {
+            self.aws.run(call, &args, Bound::Call).map_err(|error| {
                 format!(
                     "upload {} of {} to s3://{}: {error}",
                     index + 1,
@@ -393,12 +395,13 @@ enum Encoding {
 }
 
 impl Upload {
-    fn args(&self, export: &str, bucket: &Bucket) -> Vec<String> {
+    /// The call of the upload, and its options.
+    fn args(&self, export: &str, bucket: &Bucket) -> (&'static Call, Vec<String>) {
         let bucket = &bucket.0;
-        let mut args = vec!["s3".to_owned()];
-        match &self.files {
+        let mut args = Vec::new();
+        let call = match &self.files {
             Files::Sync { dir, filter } => {
-                args.extend(["sync".to_owned(), format!("{export}/{dir}")]);
+                args.push(format!("{export}/{dir}"));
                 args.push(format!("s3://{bucket}/{dir}"));
                 let exclude = |pattern: &str| ["--exclude".to_owned(), pattern.to_owned()];
                 let include = |pattern: &str| ["--include".to_owned(), pattern.to_owned()];
@@ -419,12 +422,14 @@ impl Upload {
                 }
                 // Last, as the last pattern that matches a file decides.
                 args.extend(exclude(&format!("*.{PART}")));
+                &PUBLISH.sync
             }
             Files::Copy { key } => {
-                args.extend(["cp".to_owned(), format!("{export}/{key}")]);
+                args.push(format!("{export}/{key}"));
                 args.push(format!("s3://{bucket}/{key}"));
+                &PUBLISH.copy
             }
-        }
+        };
         let cache = match self.cache {
             Cache::Immutable => "public, max-age=31536000, immutable",
             Cache::Mutable => "public, max-age=30",
@@ -437,7 +442,7 @@ impl Upload {
             Encoding::Identity => {}
         }
         args.push("--only-show-errors".to_owned());
-        args
+        (call, args)
     }
 }
 

@@ -40,8 +40,10 @@ use serde_json::json;
 use stdx::Deadline;
 
 use crate::helper::{ASK_TIMEOUT, ConfigFile, Helper, IMPORT_TIMEOUT, Profile, Request};
+use crate::iam::ECR;
 
 mod helper;
+pub mod iam;
 mod sandboxes;
 
 /// The bytes in a MiB, the unit in which Modal gives a sandbox memory.
@@ -271,7 +273,7 @@ impl<'e> Modal<'e> {
         let helper = Helper::new(script, dir, profile.clone(), config.clone());
         let Described { workspace } = helper.call(&Request::Ready, Deadline::after(ASK_TIMEOUT))?;
         let cli = Cli::connect(images.region.clone())?;
-        let [repository] = cli.repositories([&images.repository])?;
+        let [repository] = cli.repositories(&ECR, [&images.repository])?;
         let repository = repository?;
         let declared =
             (classes.iter()).map(|(name, sandbox)| (name.clone(), sandbox.class.clone()));
