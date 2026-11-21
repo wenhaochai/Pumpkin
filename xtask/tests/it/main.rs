@@ -22,6 +22,8 @@ mod gate;
 mod live;
 mod op_stats;
 mod release;
+#[path = "../../src/resume.rs"]
+mod resume;
 #[path = "../../src/sandboxes.rs"]
 mod sandboxes;
 #[path = "../../src/settings.rs"]

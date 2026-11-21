@@ -28,6 +28,7 @@ mod live;
 mod op_stats;
 mod page;
 mod release;
+mod resume;
 mod sandboxes;
 mod settings;
 mod star;
@@ -86,7 +87,9 @@ mod flags {
             /// models, whose checker must pass. Each run must end with its sandboxes deleted, and
             /// nothing of it left on EC2, EventBridge Scheduler or Modal.
             cmd live {
-                /// `docker`, `ec2`, `modal` or `examples`.
+                /// `docker`, `ec2`, `modal` or `examples`. Run again at a commit, `examples` runs
+                /// only the examples that haven't passed there, as `live/examples/<commit>` in the
+                /// target directory keeps each that has: remove that to run them all.
                 required target: String
                 /// With `modal`, the model of the GPU, of a class of `[controller.modal]`, that
                 /// the smoke's GPU runner needs.
@@ -105,7 +108,7 @@ mod flags {
                 optional --model name: String
                 /// With `examples`, posts how they ended on GitHub as the commit status
                 /// `pumpkin/examples` of `HEAD`, which `release --publish` requires to be a
-                /// success.
+                /// success: one once every example has passed at `HEAD`, in however many runs.
                 optional --status
             }
 

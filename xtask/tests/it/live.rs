@@ -1,13 +1,15 @@
 //! What `cargo xtask live` reads of the configuration that names the controller, and what it
-//! refuses there before any run, and which lines of a run's progress tell its id and a lease
-//! ready, and which sandboxes of a record are wrong.
+//! refuses there before any run, which lines of a run's progress tell its id and a lease ready,
+//! which sandboxes of a record are wrong, and which kept run of an example a run again reuses.
 
 use std::fs;
 use std::path::Path;
+use std::time::Duration;
 
 use expect_test::expect;
 use test_support::TestDir;
 
+use super::resume::{self, Passed};
 use super::settings::{Provider, Settings};
 use super::{sandboxes, wait};
 
@@ -200,4 +202,57 @@ fn undeleted() {
         sandboxes::undeleted(&record.path().join("none")),
         Vec::<String>::new()
     );
+}
+
+// Each case: what the kept runs of an example are, as a run of the example with these arguments
+// reads them.
+#[test]
+fn resumed() {
+    let dir = TestDir::new();
+    let model = |model: &str| vec![format!("model={model}")];
+    let kept = Passed {
+        id: "20261121-222706-6e243b4c".to_owned(),
+        args: model("glm-5.3"),
+        elapsed: Duration::from_secs(130),
+        usd: Some(0.0323),
+    };
+    resume::save(dir.path(), "codex", &kept).unwrap();
+    let unmetered = Passed {
+        id: "20261121-222706-967d3573".to_owned(),
+        args: Vec::new(),
+        elapsed: Duration::from_secs(125),
+        usd: None,
+    };
+    resume::save(dir.path(), "hello", &unmetered).unwrap();
+    fs::write(dir.path().join("smoke.json"), "{").unwrap();
+    fs::write(
+        dir.path().join("team.json"),
+        r#"{"id":"20261121-222916-5df12481"}"#,
+    )
+    .unwrap();
+    let cases = [
+        ("kept with its arguments", "codex", model("glm-5.3")),
+        ("kept without a cost", "hello", Vec::new()),
+        ("kept with another model", "codex", model("glm-5.3-flash")),
+        ("never kept", "hypergraph", model("glm-5.3")),
+        ("not JSON", "smoke", Vec::new()),
+        ("lacking its arguments", "team", Vec::new()),
+    ];
+    let shown: Vec<String> = (cases.iter())
+        .map(|(case, name, args)| {
+            let read = resume::read(dir.path(), name, args);
+            let read = match read.map(|kept| kept.map(|kept| (kept.id, kept.elapsed, kept.usd))) {
+                Ok(read) => format!("{read:?}"),
+                Err(error) => error.replace(dir.path().to_str().unwrap(), "<dir>"),
+            };
+            format!("{case}: {read}")
+        })
+        .collect();
+    expect![[r#"
+        kept with its arguments: Some(("20261121-222706-6e243b4c", 130s, Some(0.0323)))
+        kept without a cost: Some(("20261121-222706-967d3573", 125s, None))
+        kept with another model: None
+        never kept: None
+        not JSON: <dir>/smoke.json isn't a run that `cargo xtask live examples` kept: remove it, and run this again
+        lacking its arguments: <dir>/team.json isn't a run that `cargo xtask live examples` kept: remove it, and run this again"#]].assert_eq(&shown.join("\n"));
 }

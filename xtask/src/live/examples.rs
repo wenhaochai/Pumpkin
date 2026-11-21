@@ -11,7 +11,7 @@ use std::time::{Duration, Instant};
 
 use super::{head, install, left, made, probes, pumpkin, reached, settings, target_directory};
 use crate::settings::Settings;
-use crate::{Cargo, Result, gate, wait};
+use crate::{Cargo, Result, gate, resume, wait};
 
 /// How many runs go at once: the native benchmark's, which runs longest, and two others.
 const AT_ONCE: usize = 3;
@@ -115,10 +115,37 @@ struct Ran {
     failed: Vec<String>,
 }
 
+impl Ran {
+    /// The run that `passed` kept of the example `name`, the `index`th.
+    fn kept(index: usize, name: &'static str, passed: resume::Passed) -> Self {
+        Self {
+            index,
+            name,
+            id: Some(passed.id),
+            state: "finished".to_owned(),
+            checked: "passed",
+            elapsed: passed.elapsed,
+            usd: passed.usd,
+            failed: Vec::new(),
+        }
+    }
+}
+
+/// The directories that the runs of a commit keep their files in, below the target directory.
+struct Dirs {
+    /// The task repository, of `examples/` at the commit.
+    repo: PathBuf,
+    /// The log of each example's latest run, and those that it ran before.
+    logs: PathBuf,
+    /// What [`resume`] keeps of each example that passed.
+    passed: PathBuf,
+}
+
 /// Runs each shipped example at `HEAD` through the controller of `config`, or of `pumpkin`'s
 /// default configuration, those of a model on `model`, and fails unless each run finished, its
-/// checker passed, every sandbox of it was deleted and the providers hold nothing of it. With
-/// `status`, posts how they ended as the commit status [`gate::CONTEXT`] of `HEAD` on GitHub.
+/// checker passed, every sandbox of it was deleted and the providers hold nothing of it. Run
+/// again on a commit, it runs only the examples that haven't passed there, and keeps the others.
+/// With `status`, posts how they ended as the commit status [`gate::CONTEXT`] of `HEAD` on GitHub.
 pub(crate) fn examples(
     cargo: &Cargo,
     config: Option<&Path>,
@@ -145,18 +172,31 @@ pub(crate) fn examples(
     // The native benchmark's checker reads its record's compressed files with it.
     let zstd = cargo.sh.cmd("zstd").arg("--version").quiet().read();
     zstd.map_err(|error| format!("{error}: install zstd, and run this again"))?;
-    let (repo, logs) = repository(cargo, &commit)?;
-    eprintln!(
-        "xtask: running the examples at {commit} ({branch}) through the controller, {AT_ONCE} at \
-         once, each followed in its log in {}",
-        logs.display()
-    );
-    let started = Instant::now();
-    let mut ran = run(cargo, &repo, &logs, config.as_deref(), entries(model));
-    ran.sort_by_key(|ran| ran.index);
-    for ran in &mut ran {
-        leftovers(cargo, &settings, &repo, ran);
+    let dirs = repository(cargo, &commit)?;
+    let (mut ran, mut waiting) = (Vec::new(), Vec::new());
+    for (index, example) in entries(model).into_iter().enumerate() {
+        match resume::read(&dirs.passed, example.name, &example.args)? {
+            Some(passed) => {
+                eprintln!(
+                    "xtask: kept {}, which passed as run {}",
+                    example.name, passed.id
+                );
+                ran.push(Ran::kept(index, example.name, passed));
+            }
+            None => waiting.push((index, example)),
+        }
     }
+    if !waiting.is_empty() {
+        eprintln!(
+            "xtask: running {} of the examples at {commit} ({branch}) through the controller, \
+             {AT_ONCE} at once, each followed in its log in {}",
+            waiting.len(),
+            dirs.logs.display()
+        );
+    }
+    let started = Instant::now();
+    ran.extend(run(cargo, &settings, &dirs, config.as_deref(), waiting));
+    ran.sort_by_key(|ran| ran.index);
     let (failed, state, description) = summary(&ran, started.elapsed());
     let posted = if status {
         post(cargo, &commit, state, &description)
@@ -170,7 +210,8 @@ pub(crate) fn examples(
             Err(error) => format!("; posting `{}` failed: {error}", gate::CONTEXT),
         };
         return Err(format!(
-            "{}{posted}: fix it, and run `cargo xtask live examples` again",
+            "{}{posted}: fix it, and run `cargo xtask live examples` again, which runs only the \
+             examples that failed",
             failed.join("; ")
         )
         .into());
@@ -185,30 +226,41 @@ pub(crate) fn examples(
 
 /// Makes the task repository of the runs at `commit`, below the target directory, a Git
 /// repository of `examples/` at `commit` with `pumpkin` built from this checkout and the native
-/// benchmark's inputs prepared, and returns its path and that of the directory of their logs.
-fn repository(cargo: &Cargo, commit: &str) -> Result<(PathBuf, PathBuf)> {
+/// benchmark's inputs prepared, unless an earlier run of the commit made it, and returns its
+/// directories.
+fn repository(cargo: &Cargo, commit: &str) -> Result<Dirs> {
     let live = target_directory(cargo)?.join("live");
     let dir = live.join("examples").join(commit);
-    if dir.exists() {
-        return Err(format!(
-            "{} holds the runs of an earlier `cargo xtask live examples` of {commit}: remove it, \
-             and run this again",
-            dir.display()
-        )
-        .into());
+    let dirs = Dirs {
+        repo: dir.join("repo"),
+        logs: dir.join("logs"),
+        passed: dir.join("passed"),
+    };
+    // `passed` is made last, so a directory without it is of a run that stopped before the
+    // repository was ready, and no run of an example has started in it.
+    if dirs.passed.is_dir() {
+        return Ok(dirs);
     }
-    let (repo, logs) = (dir.join("repo"), dir.join("logs"));
-    fs::create_dir_all(&logs).map_err(|error| made(&logs, &error))?;
-    let git = cargo.sh.cmd("git").args(["init", "--quiet"]).arg(&repo);
+    if dir.exists() {
+        fs::remove_dir_all(&dir)
+            .map_err(|error| format!("removing {} failed: {error}", dir.display()))?;
+    }
+    fs::create_dir_all(&dirs.logs).map_err(|error| made(&dirs.logs, &error))?;
+    let git = cargo
+        .sh
+        .cmd("git")
+        .args(["init", "--quiet"])
+        .arg(&dirs.repo);
     git.run()?;
     let archive = cargo.sh.cmd("git");
     let archive = archive.args(["archive", "--format=tar", commit, "examples"]);
     let archive = archive.output()?.stdout;
     let extract = cargo.sh.cmd("tar").args(["--extract", "--directory"]);
-    extract.arg(&repo).stdin(archive).run()?;
-    install(cargo, &repo)?;
-    prepare(cargo, &repo, &live.join("benchmark-source"))?;
-    Ok((repo, logs))
+    extract.arg(&dirs.repo).stdin(archive).run()?;
+    install(cargo, &dirs.repo)?;
+    prepare(cargo, &dirs.repo, &live.join("benchmark-source"))?;
+    fs::create_dir(&dirs.passed).map_err(|error| made(&dirs.passed, &error))?;
+    Ok(dirs)
 }
 
 /// Prints a line of each of `ran`, which took `elapsed`, and of their total, and returns what
@@ -297,26 +349,26 @@ fn prepare(cargo: &Cargo, repo: &Path, source: &Path) -> Result<()> {
     Ok(())
 }
 
-/// Runs `examples` in `repo`, [`AT_ONCE`] at a time, in their order, through the controller of
-/// `config`, each followed into its log in `logs`, and returns how each ended, in the order they
-/// ended.
+/// Runs `examples`, each with its index, in `dirs`, [`AT_ONCE`] at a time, in their order, through
+/// the controller of `config`, each followed into its log, and returns how each ended, in the
+/// order they ended. Each that passed is kept, as soon as it has.
 fn run(
     cargo: &Cargo,
-    repo: &Path,
-    logs: &Path,
+    settings: &Settings,
+    dirs: &Dirs,
     config: Option<&Path>,
-    examples: Vec<Example>,
+    examples: Vec<(usize, Example)>,
 ) -> Vec<Ran> {
-    let mut waiting = examples.into_iter().enumerate();
+    let mut waiting = examples.into_iter();
     let mut going: Vec<Going> = Vec::new();
     let mut ran = Vec::new();
     loop {
         while going.len() < AT_ONCE
             && let Some((index, example)) = waiting.next()
         {
-            let log = logs.join(format!("{}.log", example.name));
+            let log = dirs.logs.join(format!("{}.log", example.name));
             let started = Instant::now();
-            match spawn(repo, &log, config, &example) {
+            match spawn(&dirs.repo, &log, config, &example) {
                 Ok(child) => {
                     eprintln!(
                         "xtask: started {}, followed in {}",
@@ -357,7 +409,13 @@ fn run(
                 Ok(Some(status)) => Ok(status),
                 Err(error) => Err(format!("waiting for `./pumpkin run` failed: {error}")),
             };
-            ran.push(finish(cargo, repo, going.swap_remove(index), exited));
+            ran.push(finish(
+                cargo,
+                settings,
+                dirs,
+                going.swap_remove(index),
+                exited,
+            ));
         }
     }
 }
@@ -369,7 +427,9 @@ fn spawn(
     config: Option<&Path>,
     example: &Example,
 ) -> std::result::Result<Child, String> {
-    let file = File::create(log).and_then(|file| Ok((file.try_clone()?, file)));
+    let file = keep_earlier(log)
+        .and_then(|()| File::create(log))
+        .and_then(|file| Ok((file.try_clone()?, file)));
     let (stdout, stderr) = file.map_err(|error| made(log, &error))?;
     let mut run = pumpkin(repo);
     run.args(["run", "--wait"]);
@@ -385,14 +445,30 @@ fn spawn(
         .map_err(|error| format!("running `./pumpkin run` failed: {error}"))
 }
 
+/// Moves the log of an earlier run of the same example, if `log` is one, to `<name>.<n>.log` for
+/// the first `n` that names none, so that the run that fails keeps its log when it is run again.
+fn keep_earlier(log: &Path) -> std::io::Result<()> {
+    if !log.exists() {
+        return Ok(());
+    }
+    let mut attempt = 1;
+    while log.with_extension(format!("{attempt}.log")).exists() {
+        attempt += 1;
+    }
+    fs::rename(log, log.with_extension(format!("{attempt}.log")))
+}
+
 /// How `going` ended, once `./pumpkin run --wait` has exited as `exited` says: its record read
-/// and checked, and its checker run, which adds what it says to the log.
+/// and checked, its checker run, which adds what it says to the log, and the providers asked what
+/// they hold of it. A run that passed is kept in `dirs`.
 fn finish(
     cargo: &Cargo,
-    repo: &Path,
+    settings: &Settings,
+    dirs: &Dirs,
     going: Going,
     exited: std::result::Result<ExitStatus, String>,
 ) -> Ran {
+    let repo = &dirs.repo;
     let Going {
         index,
         example,
@@ -440,7 +516,7 @@ fn finish(
         &log,
         &mut failed,
     );
-    Ran {
+    let mut ran = Ran {
         index,
         name: example.name,
         id,
@@ -449,6 +525,29 @@ fn finish(
         elapsed,
         usd: outcome["usage"]["usd"].as_f64(),
         failed,
+    };
+    leftovers(cargo, settings, repo, &mut ran);
+    keep(dirs, &example, &mut ran);
+    ran
+}
+
+/// Keeps `ran`, the run of `example`, in `dirs` if it passed, or adds to what it failed why it
+/// can't be kept.
+fn keep(dirs: &Dirs, example: &Example, ran: &mut Ran) {
+    if !ran.failed.is_empty() {
+        return;
+    }
+    let Some(id) = ran.id.clone() else {
+        return;
+    };
+    let passed = resume::Passed {
+        id,
+        args: example.args.clone(),
+        elapsed: ran.elapsed,
+        usd: ran.usd,
+    };
+    if let Err(error) = resume::save(&dirs.passed, example.name, &passed) {
+        ran.failed.push(error);
     }
 }
 
