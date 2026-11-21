@@ -6,6 +6,8 @@ on:
 
 permissions:
   contents: write
+  # The release reads the tagged commit's statuses, which its examples' status is one of.
+  statuses: read
 
 jobs:
   release:

@@ -40,6 +40,10 @@ The rules for writing Pumpkin's tests and their snapshots.
   by `cargo xtask live ec2` and `cargo xtask live modal` instead; RUN them at review of a change to
   a provider, `crates/aws`, `crates/tls`, the gateway's meeting, `sandboxd`'s listen, dial or user
   drop, `ec2-boot`, the EC2 user data or the Modal helper, and give the run's id in the pull request
+- RUN `cargo xtask live examples --status`, which costs money, on the commit of a release before
+  its tag is pushed: it runs each shipped example through the controller with real models, as
+  their READMEs say, and posts the outcome as the commit's `pumpkin/examples` status, without whose
+  success `cargo xtask release <tag> --publish` refuses the tag
 - SET `test = false` on each library and binary target: tests live in the integration test
   binary, and `cargo test` would build each target again for an empty unit-test harness; SET
   `doctest = false` too on each library whose docs hold no Rust example, which rustdoc would build

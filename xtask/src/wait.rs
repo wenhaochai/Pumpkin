@@ -1,5 +1,13 @@
 //! What `cargo xtask live` reads of what `./pumpkin` says as it follows and reaps a run.
 
+/// The id of the run that `line` says `./pumpkin run` sent to a controller, if it is the line
+/// that says so, `pumpkin: run <id> goes to controller ...`.
+pub(crate) fn run_started(line: &str) -> Option<&str> {
+    let rest = line.strip_prefix("pumpkin: run ")?;
+    let (run, _) = rest.split_once(" goes to controller ")?;
+    Some(run)
+}
+
 /// Whether `line`, one that `./pumpkin wait` says, is the milestone of a lease of an agent's
 /// that its runner is ready: `<grant> lease <n> of agent <m> ready`, `<grant>` the name of the
 /// lease's grant, with ` with <GPUs>` after it for a lease of GPUs, as `pumpkin`'s

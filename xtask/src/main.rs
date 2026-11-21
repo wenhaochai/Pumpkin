@@ -23,6 +23,7 @@ use xshell::{Cmd, Shell, cmd};
 
 mod diff;
 mod figure;
+mod gate;
 mod live;
 mod op_stats;
 mod page;
@@ -74,17 +75,17 @@ mod flags {
             /// `cargo metadata`.
             cmd figures {}
 
-            /// Runs the checks that reach a real environment, which `ci` leaves out: `docker`, the
-            /// tests that need a Docker engine, the static sandboxd or a server elsewhere, ignored
-            /// otherwise, through the Docker context `PUMPKIN_DOCKER_CONTEXT` names, or
-            /// `default`; `ec2` and `modal`, which cost money, a run of `examples/smoke` on that
-            /// provider through the controller that `~/.config/pumpkin/pumpkin.toml` names, with
-            /// Pumpkin at `HEAD`, built by `./pumpkin` in a task repository below the target
-            /// directory: every probe of a sandbox's confinement must pass, every sandbox be
-            /// deleted, and nothing tagged with the run be left on EC2, EventBridge Scheduler or
-            /// Modal, which `pumpkin cancel` then removes.
+            /// Runs the checks that reach a real environment, with Pumpkin at `HEAD`: `docker`, the
+            /// tests that need a Docker engine, the static sandboxd or a server elsewhere, through
+            /// the Docker context that `PUMPKIN_DOCKER_CONTEXT` names, or `default`; and, at a
+            /// cost, through the configuration's controller, from a task repository below the
+            /// target directory: `ec2` and `modal`, a run of `examples/smoke` on that provider,
+            /// whose probes must pass, with nothing of it left on EC2, EventBridge Scheduler or
+            /// Modal, which `pumpkin cancel` then removes; and `examples`, about $10 over two
+            /// hours, a run of each shipped example on real models, whose checker must pass. Each
+            /// run must end with its sandboxes deleted.
             cmd live {
-                /// `docker`, `ec2` or `modal`.
+                /// `docker`, `ec2`, `modal` or `examples`.
                 required target: String
                 /// With `modal`, the model of the GPU, of a class of `[controller.modal]`, that
                 /// the smoke's GPU runner needs.
@@ -94,6 +95,17 @@ mod flags {
                 /// by itself by the run's hard end, about 95 minutes after its start, and that
                 /// `pumpkin reap` then removes what is left: at most about $1 on EC2, $4 on Modal.
                 optional --lost
+                /// With `examples`, the machine's configuration that the runs go by, whose
+                /// `[controller]` they go to and whose upstreams serve `--model` and the native
+                /// benchmark's `glm-5.3-flash`. The default, and the one of `ec2` and `modal`, is
+                /// `~/.config/pumpkin/pumpkin.toml`.
+                optional --config file: PathBuf
+                /// With `examples`, the model of the examples that take one as `--arg model`.
+                optional --model name: String
+                /// With `examples`, posts how they ended on GitHub as the commit status
+                /// `pumpkin/examples` of `HEAD`, which `release --publish` requires to be a
+                /// success.
+                optional --status
             }
 
             /// Counts incoming operations by request kind in a run's `log.jsonl`. Reports the
@@ -199,6 +211,9 @@ mod flags {
 
         pub gpu_model: Option<String>,
         pub lost: bool,
+        pub config: Option<PathBuf>,
+        pub model: Option<String>,
+        pub status: bool,
     }
 
     #[derive(Debug)]
@@ -286,32 +301,7 @@ fn try_main() -> Result<()> {
         }
         flags::XtaskCmd::Ci(flags::Ci) => ci(&cargo),
         flags::XtaskCmd::Figures(flags::Figures) => figure::write(&cargo.sh, &metadata(&cargo)?),
-        flags::XtaskCmd::Live(flags::Live {
-            target,
-            gpu_model,
-            lost,
-        }) => {
-            let provider = match target.as_str() {
-                "docker" if lost => {
-                    return Err("`--lost` is for `ec2` and `modal`: leave it out".into());
-                }
-                "docker" => return live::docker(&cargo),
-                "ec2" => settings::Provider::Ec2,
-                "modal" => settings::Provider::Modal,
-                _ => {
-                    return Err(format!(
-                        "`{target}` is no live target: give `docker`, `ec2` or `modal`"
-                    )
-                    .into());
-                }
-            };
-            if gpu_model.is_some() && provider != settings::Provider::Modal {
-                return Err(
-                    "`--gpu-model` is for `cargo xtask live modal` alone: leave it out".into(),
-                );
-            }
-            live::smoke(&cargo, provider, gpu_model.as_deref(), lost)
-        }
+        flags::XtaskCmd::Live(flags) => live(&cargo, flags),
         flags::XtaskCmd::OpStats(flags::OpStats { run_dir, caller }) => {
             op_stats::report(&run_dir, caller.as_deref())
         }
@@ -336,6 +326,62 @@ fn try_main() -> Result<()> {
             star::link(&cargo).map(drop)
         }
     }
+}
+
+/// Runs `cargo xtask live` as `flags` ask.
+fn live(cargo: &Cargo, flags: flags::Live) -> Result<()> {
+    let flags::Live {
+        target,
+        gpu_model,
+        lost,
+        config,
+        model,
+        status,
+    } = flags;
+    let examples_only = [
+        ("--config", config.is_some()),
+        ("--model", model.is_some()),
+        ("--status", status),
+    ];
+    let given = examples_only
+        .iter()
+        .find_map(|(flag, given)| given.then_some(*flag));
+    let provider = match target.as_str() {
+        "examples" if gpu_model.is_some() || lost => {
+            return Err(
+                "`--gpu-model` and `--lost` are for `ec2` and `modal`: leave them out".into(),
+            );
+        }
+        "examples" => {
+            let Some(model) = model else {
+                let error = "`cargo xtask live examples` runs examples on a model: name it with \
+                             `--model`";
+                return Err(error.into());
+            };
+            return live::examples(cargo, config.as_deref(), &model, status);
+        }
+        _ if let Some(flag) = given => {
+            return Err(
+                format!("`{flag}` is for `cargo xtask live examples` alone: leave it out").into(),
+            );
+        }
+        "docker" if lost => {
+            return Err("`--lost` is for `ec2` and `modal`: leave it out".into());
+        }
+        "docker" => return live::docker(cargo),
+        "ec2" => settings::Provider::Ec2,
+        "modal" => settings::Provider::Modal,
+        _ => {
+            return Err(format!(
+                "`{target}` is no live target: give `docker`, `ec2`, `modal` or `examples`"
+            )
+            .into());
+        }
+    };
+    if gpu_model.is_some() && provider != settings::Provider::Modal {
+        return Err("`--gpu-model` is for `cargo xtask live modal` alone: leave it out".into());
+    }
+    live::smoke(cargo, provider, gpu_model.as_deref(), lost)
 }
 
 /// Builds the cargo commands xtask runs, at the workspace's root, without the variables that

@@ -12,6 +12,10 @@ use stdx::process::Environment;
 use crate::settings::{Provider, Settings};
 use crate::{Cargo, Result, install_file, root, sandboxd, star, tools, wait};
 
+mod examples;
+
+pub(crate) use examples::examples;
+
 /// How many lines the smoke's probe prints for each sandbox, each of which must say `ok`.
 const CHECKS_PER_SANDBOX: usize = 5;
 
@@ -399,17 +403,8 @@ fn head(cargo: &Cargo) -> Result<(String, String)> {
 /// keeps its `.git` and `.pumpkin` from one live run to the next. The executable is installed
 /// from this checkout so an unpublished change can be exercised.
 fn task_repository(cargo: &Cargo) -> Result<PathBuf> {
-    let metadata = cargo
-        .cmd(&["metadata", "--format-version=1", "--no-deps"])
-        .read()?;
-    let metadata: serde_json::Value = serde_json::from_str(&metadata)?;
-    let Some(target) = metadata["target_directory"].as_str() else {
-        return Err("`cargo metadata` named no target directory: expected one".into());
-    };
-    let repo = Path::new(target).join("live/repo");
-    let made =
-        |path: &Path, error: std::io::Error| format!("writing {} failed: {error}", path.display());
-    fs::create_dir_all(&repo).map_err(|error| made(&repo, error))?;
+    let repo = target_directory(cargo)?.join("live/repo");
+    fs::create_dir_all(&repo).map_err(|error| made(&repo, &error))?;
     if !repo.join(".git").exists() {
         cargo
             .sh
@@ -434,14 +429,37 @@ fn task_repository(cargo: &Cargo) -> Result<PathBuf> {
         removed.map_err(|error| format!("removing {} failed: {error}", path.display()))?;
     }
     copy_tree(&root().join("examples"), &repo)?;
+    install(cargo, &repo)?;
+    Ok(repo)
+}
+
+/// Cargo's target directory, wherever its configuration puts it.
+fn target_directory(cargo: &Cargo) -> Result<PathBuf> {
+    let metadata = cargo
+        .cmd(&["metadata", "--format-version=1", "--no-deps"])
+        .read()?;
+    let metadata: serde_json::Value = serde_json::from_str(&metadata)?;
+    let Some(target) = metadata["target_directory"].as_str() else {
+        return Err("`cargo metadata` named no target directory: expected one".into());
+    };
+    Ok(PathBuf::from(target))
+}
+
+/// Installs `pumpkin`, built from this checkout, in the task repository `repo`, as its
+/// `.pumpkin`, which Git ignores, and `./pumpkin`, which [`pumpkin`] runs.
+fn install(cargo: &Cargo, repo: &Path) -> Result<()> {
     let workspace = repo.join(".pumpkin");
     crate::build(cargo, Some(workspace.clone()), crate::MUSL)?;
     let ignore = workspace.join(".gitignore");
-    fs::write(&ignore, "*\n").map_err(|error| made(&ignore, error))?;
+    fs::write(&ignore, "*\n").map_err(|error| made(&ignore, &error))?;
     let entry = repo.join("pumpkin");
     std::os::unix::fs::symlink(".pumpkin/bin/pumpkin", &entry)
-        .map_err(|error| made(&entry, error))?;
-    Ok(repo)
+        .map_err(|error| made(&entry, &error))?;
+    Ok(())
+}
+
+fn made(path: &Path, error: &std::io::Error) -> String {
+    format!("writing {} failed: {error}", path.display())
 }
 
 fn pumpkin(repo: &Path) -> Command {
@@ -486,8 +504,7 @@ fn followed(mut run: Command) -> Result<(String, ExitStatus)> {
             line.map_err(|error| format!("reading what `./pumpkin` said failed: {error}"))?;
         eprintln!("{line}");
         if id.is_none()
-            && let Some(rest) = line.strip_prefix("pumpkin: run ")
-            && let Some((run, _)) = rest.split_once(" goes to controller ")
+            && let Some(run) = wait::run_started(&line)
         {
             id = Some(run.to_owned());
         }
@@ -509,6 +526,14 @@ fn followed(mut run: Command) -> Result<(String, ExitStatus)> {
 /// failed or is missing, and a sandbox that isn't deleted. `gpu` is whether the run has a GPU
 /// runner.
 fn checked(record: &Path, gpu: bool) -> Vec<String> {
+    let (outcome, mut failed) = ended(record);
+    failed.extend(probes(&outcome, gpu));
+    failed
+}
+
+/// The `outcome.json` of the run at `record`, null if it can't be read, and what is wrong in the
+/// record: a run that didn't finish, and a sandbox that isn't deleted.
+fn ended(record: &Path) -> (serde_json::Value, Vec<String>) {
     let read = |path: &Path| -> std::result::Result<serde_json::Value, String> {
         let text = fs::read_to_string(path)
             .map_err(|error| format!("reading {} failed: {error}", path.display()))?;
@@ -524,6 +549,37 @@ fn checked(record: &Path, gpu: bool) -> Vec<String> {
     if outcome["state"] != "finished" {
         failed.push(format!("the run didn't finish: {}", outcome["state"]));
     }
+    // Each sandbox's directory, as the record lays them out.
+    let mut dirs = Vec::new();
+    for kind in ["agents", "shared", "jobs", "leases"] {
+        if let Ok(entries) = fs::read_dir(record.join(kind)) {
+            dirs.extend(entries.flatten().map(|entry| entry.path()));
+        }
+    }
+    dirs.sort();
+    for dir in dirs {
+        let sandbox = match read(&dir.join("sandbox.json")) {
+            Ok(sandbox) => sandbox,
+            Err(error) => {
+                failed.push(error);
+                continue;
+            }
+        };
+        let deleted = sandbox["delete"]["state"].as_str().unwrap_or("not deleted");
+        if deleted != "deleted" {
+            failed.push(format!(
+                "sandbox {} on {} is {deleted}",
+                sandbox["id"], sandbox["provider"]
+            ));
+        }
+    }
+    (outcome, failed)
+}
+
+/// What is wrong in the probes that `outcome`, a smoke run's, returned: a probe that failed or is
+/// missing. `gpu` is whether the run has a GPU runner.
+fn probes(outcome: &serde_json::Value, gpu: bool) -> Vec<String> {
+    let mut failed = Vec::new();
     let values = outcome["verdict"]["result"]["values"].as_array();
     let detail = (values.into_iter().flatten())
         .find(|value| value["name"] == "detail")
@@ -544,29 +600,6 @@ fn checked(record: &Path, gpu: bool) -> Vec<String> {
             detail.len(),
             sandboxes * CHECKS_PER_SANDBOX
         ));
-    }
-    let mut dirs = vec![record.join("agents/agent")];
-    for kind in ["jobs", "leases"] {
-        if let Ok(entries) = fs::read_dir(record.join(kind)) {
-            dirs.extend(entries.flatten().map(|entry| entry.path()));
-        }
-    }
-    for dir in dirs {
-        let sandbox = match read(&dir.join("sandbox.json")) {
-            Ok(sandbox) => sandbox,
-            Err(error) => {
-                failed.push(error);
-                continue;
-            }
-        };
-        let deleted = sandbox["delete"]["state"].as_str().unwrap_or("not deleted");
-        println!(
-            "sandbox {} on {}: {deleted}",
-            sandbox["id"], sandbox["provider"]
-        );
-        if deleted != "deleted" {
-            failed.push(format!("sandbox {} is {deleted}", sandbox["id"]));
-        }
     }
     failed
 }

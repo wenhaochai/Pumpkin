@@ -1,5 +1,6 @@
 //! What `cargo xtask live` reads of the configuration that names the controller, and what it
-//! refuses there before any run, and which lines of a run's progress tell a lease ready.
+//! refuses there before any run, and which lines of a run's progress tell its id and a lease
+//! ready.
 
 use std::path::Path;
 
@@ -67,6 +68,24 @@ fn settings() {
         modal with a GPU no class has: no class of /home/alice/.config/pumpkin/pumpkin.toml's `[controller.modal]` has the GPU `NVIDIA B200`: give one of `NVIDIA A100-SXM4-40GB`, `NVIDIA H100 80GB HBM3`
         modal without [controller.modal]: /home/alice/.config/pumpkin/pumpkin.toml names no `[controller.modal]`, which a live run on Modal needs: name the workspace's profile and classes there, as the README says
         no [controller]: /home/alice/.config/pumpkin/pumpkin.toml names no `[controller]`, which a live run goes through: name the one `deploy/aws` made, as the README says"#]].assert_eq(&lines.join("\n"));
+}
+
+// Lines that `./pumpkin run` said of a run that it sent to a controller.
+#[test]
+fn run_started() {
+    let lines = [
+        "pumpkin: run 20261121-064723-9fa36f9e goes to controller `alice`",
+        "pumpkin: run 20261121-064723-9fa36f9e is a job on controller `alice`, which builds it, \
+         then runs it",
+        "pumpkin: run 20261121-064723-9fa36f9e started",
+    ];
+    let shown: Vec<String> = (lines.iter())
+        .map(|line| format!("{:?}: {line}", wait::run_started(line)))
+        .collect();
+    expect![[r#"
+        Some("20261121-064723-9fa36f9e"): pumpkin: run 20261121-064723-9fa36f9e goes to controller `alice`
+        None: pumpkin: run 20261121-064723-9fa36f9e is a job on controller `alice`, which builds it, then runs it
+        None: pumpkin: run 20261121-064723-9fa36f9e started"#]].assert_eq(&shown.join("\n"));
 }
 
 // Lines that `./pumpkin wait` says, as its own tests pin them.

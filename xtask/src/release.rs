@@ -7,7 +7,7 @@ use std::path::Path;
 use stdx::Context as _;
 use xshell::{Shell, cmd};
 
-use crate::{Cargo, MUSL, Result, build, root};
+use crate::{Cargo, MUSL, Result, build, gate, root};
 
 struct Release<'a> {
     tag: &'a str,
@@ -59,6 +59,11 @@ pub(super) fn run(cargo: &Cargo, tag: &str, publish: bool) -> Result<()> {
 
     let output = root().join("target/release-assets").join(tag);
     if publish {
+        // The latest 100, as a page holds at most that many; an older one counts for nothing.
+        let commit = &release.commit;
+        let statuses = format!("repos/{{owner}}/{{repo}}/commits/{commit}/statuses?per_page=100");
+        let statuses = cmd!(sh, "gh api {statuses}").read()?;
+        gate::passed(&statuses, &release.commit)?;
         sh.change_dir(output);
         return publish_assets(&sh, &release);
     }

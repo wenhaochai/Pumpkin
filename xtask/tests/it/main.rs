@@ -17,8 +17,11 @@ mod diff;
 mod entry;
 #[path = "../../src/figure.rs"]
 mod figure;
+#[path = "../../src/gate.rs"]
+mod gate;
 mod live;
 mod op_stats;
+mod release;
 #[path = "../../src/settings.rs"]
 mod settings;
 #[path = "../../src/tidy.rs"]

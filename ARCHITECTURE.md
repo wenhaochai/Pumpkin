@@ -504,6 +504,9 @@ among them the checks of Rust files, of documents and their figures (`tidy`), of
 files it needs beside it. `release` packages and checks that build and publishes its archive,
 launcher and pin on GitHub. `tools` pins the contributor tools.
 
+**Architecture Invariant:** a tag publishes only if `live examples` passed on its commit, which
+the commit's status records on GitHub (`gate`).
+
 ### `deploy/pumpkin`
 
 The consumer entry, a POSIX shell script that a release ships as `pumpkin`. It verifies
@@ -525,8 +528,8 @@ idle and reap at its boot. No crate depends on it; its outputs feed a machine's 
 ### `examples`
 
 Tasks in the workflow language: `hello` needs no model, `codex` takes one as `--arg model`, and
-`smoke`, which `cargo xtask live` runs, probes each sandbox's confinement. `pumpkin`'s tests copy
-`hello`.
+`smoke`, which `cargo xtask live` runs, probes each sandbox's confinement. `cargo xtask live
+examples` runs them all before a release. `pumpkin`'s tests copy `hello`.
 
 ## Cross-cutting concerns
 
