@@ -17,8 +17,6 @@ use stdx::process::Environment;
 
 use crate::{absolute_utf8, cli, next, say};
 
-const FORMATTER: &str = "buildifier";
-
 // No configuration file, so that every `.star` file is written alike, wherever it is; and each
 // text is read as a generic Starlark file, not one of Bazel's, whatever its name.
 const ALWAYS: [&str; 2] = ["--config=off", "--type=default"];
@@ -159,7 +157,7 @@ impl Formatter {
     /// The formatter installed beside this `pumpkin`.
     pub(crate) fn beside() -> Result<Self, String> {
         let pumpkin = crate::workspace::exe("expected the formatter beside it")?;
-        let formatter = pumpkin.with_file_name(FORMATTER);
+        let formatter = pumpkin.with_file_name(install::File::Buildifier.name());
         if !formatter.is_file() {
             return Err(format!(
                 "{} doesn't exist: expected the formatter of `.star` files beside `pumpkin`, as \

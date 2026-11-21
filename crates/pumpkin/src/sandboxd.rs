@@ -32,7 +32,7 @@ impl Sandboxd {
             return Ok(Self(absolute));
         }
         let pumpkin = crate::workspace::exe("name a static sandboxd with `--sandboxd`")?;
-        let path = pumpkin.with_file_name("sandboxd");
+        let path = pumpkin.with_file_name(install::File::Sandboxd.name());
         let replace = "`cargo xtask build` puts `pumpkin` beside a static one, or name \
                        one with `--sandboxd`";
         check(&path, replace).map_err(|wrong| {

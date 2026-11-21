@@ -26,19 +26,20 @@ impl Build {
     /// Hashes this build's files; `expected` ends the message of a failure to find its executable.
     pub(super) fn of_this(expected: &str) -> Result<Self, String> {
         let exe = workspace::exe(expected)?;
-        let mut files = vec![(install::File::Pumpkin, exe.clone())];
-        let beside =
-            (install::File::ALL.into_iter()).filter(|&file| file != install::File::Pumpkin);
-        for file in beside {
-            let path = exe.with_file_name(file.name());
-            if path.try_exists().context(path.display())? {
-                files.push((file, path));
-            }
-        }
+        let mut files = Vec::new();
         let mut entries = Vec::new();
         let mut sources = BTreeMap::new();
-        for &(file, ref path) in &files {
-            let (digest, size_bytes) = manifest::file_sha256(path)?;
+        for file in install::File::ALL {
+            let own = file == install::File::Pumpkin;
+            let path = if own {
+                exe.clone()
+            } else {
+                exe.with_file_name(file.name())
+            };
+            if !own && !path.try_exists().context(path.display())? {
+                continue;
+            }
+            let (digest, size_bytes) = manifest::file_sha256(&path)?;
             let kind = if file.is_executable() {
                 manifest::Kind::Executable
             } else {
@@ -51,10 +52,8 @@ impl Build {
                 path: file.name().to_owned(),
             });
             sources.insert(digest, manifest::Source::File(path.clone()));
+            files.push((file.name(), path));
         }
-        let mut files: Vec<_> = (files.into_iter())
-            .map(|(file, path)| (file.name(), path))
-            .collect();
         files.sort_unstable_by_key(|&(name, _)| name);
         let manifest = manifest::Manifest::new(entries);
         let hashed = manifest::Hashed { manifest, sources };

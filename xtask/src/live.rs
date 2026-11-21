@@ -41,13 +41,9 @@ pub(crate) fn docker(cargo: &Cargo) -> Result<()> {
     // A sandbox runs under its role's UID. Give it the installed mode even when the
     // contributor's umask makes Cargo's own artifacts executable only by their owner.
     let install = cargo.sh.create_dir(root().join("bin/live"))?;
-    let sandboxd = install_file(&install, "sandboxd", &built, 0o755)?;
-    install_file(
-        &install,
-        "ec2-boot",
-        &built.with_file_name("ec2-boot"),
-        0o755,
-    )?;
+    let sandboxd = install_file(&install, install::File::Sandboxd.name(), &built, 0o755)?;
+    let boot = install::File::Ec2Boot.name();
+    install_file(&install, boot, &built.with_file_name(boot), 0o755)?;
     let test = cargo.cmd(&[
         "nextest",
         "run",

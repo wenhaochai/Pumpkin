@@ -96,11 +96,13 @@ Ctrl-C reaches it, and its command alone is killed at the bound.
 ### `crates/install`
 
 The files of an install, `pumpkin` and those beside it in `bin/` (`File`): which files there are,
-their names, and which are executable. `xtask`'s `build` lays them out and its `release` checks
-them, and `pumpkin` hashes its own install to send to a controller, all from this one list.
+their names, and which are executable. `xtask` takes them from here to lay an install out
+(`build`), to check its archived copy (`release`) and to place files for its checks, and
+`pumpkin` takes them to find the files beside itself and to hash its own install to send to a
+controller.
 
-**Architecture Invariant:** it is `#![no_std]`, and its manifest names no dependency, since
-`xtask`, which every contributor task builds first, depends on it.
+**Architecture Invariant:** it holds data and does no I/O, as `recipe` and `library` do. It is
+`#![no_std]`, and its manifest names no dependency.
 
 ### `crates/schema`
 

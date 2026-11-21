@@ -109,9 +109,8 @@ mod flags {
             /// ec2-boot that the EC2 provider's image of it holds too, and prints sandboxd's path.
             cmd sandboxd {}
 
-            /// Builds `pumpkin`, the static sandboxd and ec2-boot, and puts them in `<root>/bin`
-            /// with the pinned buildifier, the Modal helper and its lock. Prints each file's path.
-            /// The pinned tools require Linux on x86-64.
+            /// Builds the files of an install, which `install::File` lists, and puts them in
+            /// `<root>/bin`. Prints each file's path. The pinned tools require Linux on x86-64.
             cmd build {
                 /// The directory whose `bin` they go in: this checkout's `.pumpkin` by default.
                 optional --root dir: PathBuf
@@ -514,7 +513,7 @@ fn mutants(cargo: &Cargo, paths: &[PathBuf], rev: Option<&str>) -> Result<()> {
     cmd!(sh, "tar --extract --file {archive} --directory {tree}").run()?;
     // Its tests find the formatter by the link in their own tree, which the archive doesn't hold.
     let bin = sh.create_dir(tree.join("bin"))?;
-    std::os::unix::fs::symlink(&buildifier, bin.join("buildifier"))?;
+    std::os::unix::fs::symlink(&buildifier, bin.join(install::File::Buildifier.name()))?;
     let run = cargo.cmd(&["mutants", "--iterate", "--dir"]).arg(&tree);
     missed(run.arg("--output").arg(root()).args(&files), &again)?;
     let brought = sh.read_file(report.join("caught.txt"))?;
@@ -631,11 +630,10 @@ fn executables(build: Cmd<'_>) -> Result<Vec<serde_json::Value>> {
     Ok(executables)
 }
 
-/// Builds `pumpkin` for `target` and the static `sandboxd` and `ec2-boot`, and installs them
-/// with the Modal provider's helper and its lock, and the pinned
-/// buildifier ([`star::buildifier`]), in `<root>/bin`, made if need be, replacing what is there:
-/// `root` made absolute, or this checkout's `.pumpkin`. Prints each one's path, and, without a
-/// `root`, says if `<root>/bin` is not on `PATH`.
+/// Builds the files of an install, which [`install::File`] lists, with `pumpkin` for `target`, and
+/// installs them in `<root>/bin`, made if need be, replacing what is there: `root` made
+/// absolute, or this checkout's `.pumpkin`. Prints each one's path, and, without a `root`, says
+/// if `<root>/bin` is not on `PATH`.
 fn build(cargo: &Cargo, root: Option<PathBuf>, target: &str) -> Result<()> {
     let default_root = root.is_none();
     let root = root.unwrap_or_else(|| self::root().join(".pumpkin"));

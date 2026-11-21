@@ -84,7 +84,8 @@ fn package(cargo: &Cargo, sh: &Shell, output: &Path, release: &Release<'_>) -> R
         "dist/buildifier-LICENSE",
     )?;
     // The upstream formatter includes compressed Go debug sections in its release binary.
-    cmd!(sh, "strip --strip-debug dist/bin/buildifier").run()?;
+    let buildifier = install::File::Buildifier.name();
+    cmd!(sh, "strip --strip-debug dist/bin/{buildifier}").run()?;
 
     cmd!(sh, "tar --create --file {archive} --directory dist")
         .args([
@@ -143,8 +144,10 @@ fn check(sh: &Shell, commit: &str) -> Result<()> {
             return Err(format!("bin/{name} is {elf}: expected a static x86-64 ELF").into());
         }
     }
-    cmd!(sh, "bin/buildifier --version").run()?;
-    let version = cmd!(sh, "bin/pumpkin --version").read()?;
+    let buildifier = install::File::Buildifier.name();
+    let pumpkin = install::File::Pumpkin.name();
+    cmd!(sh, "bin/{buildifier} --version").run()?;
+    let version = cmd!(sh, "bin/{pumpkin} --version").read()?;
     if !version.contains(&format!("({commit:.9} ")) {
         return Err(
             format!("archived pumpkin reports {version:?}: expected commit {commit}").into(),
