@@ -9,7 +9,8 @@ use std::process::{Child, Command, ExitStatus, Stdio};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use super::{head, install, made, probes, pumpkin, target_directory};
+use super::{head, install, left, made, probes, pumpkin, reached, settings, target_directory};
+use crate::settings::Settings;
 use crate::{Cargo, Result, gate, wait};
 
 /// How many runs go at once: the native benchmark's, which runs longest, and two others.
@@ -24,8 +25,11 @@ const BINDING: &str = "hypergraph-benchmark/binding.json";
 
 /// How a run is checked once it has finished with every sandbox deleted.
 enum Check {
-    /// By its ending alone.
-    Ending,
+    /// By the integers that its final call returned under these names, each of which must be the
+    /// one given.
+    Equal(&'static [(&'static str, i64)]),
+    /// By the integer that its final call returned under this name, which must be above 0.
+    Positive(&'static str),
     /// By the script below `examples/`, given the record and then these arguments.
     Script(&'static str, &'static [&'static str]),
     /// By the smoke's probes, of its sandboxes on CPUs.
@@ -50,6 +54,8 @@ fn entries(model: &str) -> Vec<Example> {
         check,
     };
     let team = "team/verify.py";
+    // `echo hello` writes 6 bytes, a line.
+    let hello = Check::Equal(&[("score", 6), ("lines", 1)]);
     vec![
         example(
             "native",
@@ -57,8 +63,13 @@ fn entries(model: &str) -> Vec<Example> {
             &[],
             Check::Script("hypergraph-benchmark/verify.py", &[]),
         ),
-        example("hello", "hello/task.star", &[], Check::Ending),
-        example("codex", "codex/task.star", &[&model], Check::Ending),
+        example("hello", "hello/task.star", &[], hello),
+        example(
+            "codex",
+            "codex/task.star",
+            &[&model],
+            Check::Positive("score"),
+        ),
         example(
             "hypergraph",
             "hypergraph/task.star",
@@ -106,8 +117,8 @@ struct Ran {
 
 /// Runs each shipped example at `HEAD` through the controller of `config`, or of `pumpkin`'s
 /// default configuration, those of a model on `model`, and fails unless each run finished, its
-/// checker passed and every sandbox of it was deleted. With `status`, posts how they ended as the
-/// commit status [`gate::CONTEXT`] of `HEAD` on GitHub.
+/// checker passed, every sandbox of it was deleted and the providers hold nothing of it. With
+/// `status`, posts how they ended as the commit status [`gate::CONTEXT`] of `HEAD` on GitHub.
 pub(crate) fn examples(
     cargo: &Cargo,
     config: Option<&Path>,
@@ -119,6 +130,8 @@ pub(crate) fn examples(
         .map(std::path::absolute)
         .transpose()
         .map_err(|error| format!("making the configuration's path absolute failed: {error}"))?;
+    let settings = settings(config.as_deref(), None, None)?;
+    reached(cargo, &settings)?;
     if status {
         let github = format!("repos/{{owner}}/{{repo}}/commits/{commit}");
         let found = cargo.sh.cmd("gh").args(["api", &github]).quiet().read();
@@ -141,6 +154,9 @@ pub(crate) fn examples(
     let started = Instant::now();
     let mut ran = run(cargo, &repo, &logs, config.as_deref(), entries(model));
     ran.sort_by_key(|ran| ran.index);
+    for ran in &mut ran {
+        leftovers(cargo, &settings, &repo, ran);
+    }
     let (failed, state, description) = summary(&ran, started.elapsed());
     let posted = if status {
         post(cargo, &commit, state, &description)
@@ -161,7 +177,7 @@ pub(crate) fn examples(
     }
     posted?;
     println!(
-        "xtask: every run finished, its checker passed, and every sandbox is deleted{}",
+        "xtask: every run finished, its checker passed, and nothing of it is left{}",
         if status { "; posted it on GitHub" } else { "" }
     );
     Ok(())
@@ -448,8 +464,35 @@ fn check(
     log: &Path,
     failed: &mut Vec<String>,
 ) -> &'static str {
+    let returned = |name: &str| {
+        let values = outcome["verdict"]["result"]["values"].as_array();
+        let value = (values.into_iter().flatten()).find(|value| value["name"] == name);
+        value.and_then(|value| value["value"].as_i64())
+    };
     match check {
-        Check::Ending => "none",
+        Check::Equal(expected) => {
+            let before = failed.len();
+            for &(name, expected) in *expected {
+                let got = returned(name);
+                if got != Some(expected) {
+                    let got = got.map_or("nothing".to_owned(), |got| got.to_string());
+                    failed.push(format!("its `{name}` is {got}: expected {expected}"));
+                }
+            }
+            if failed.len() == before {
+                "passed"
+            } else {
+                "failed"
+            }
+        }
+        Check::Positive(name) => match returned(name) {
+            Some(got) if got > 0 => "passed",
+            got => {
+                let got = got.map_or("nothing".to_owned(), |got| got.to_string());
+                failed.push(format!("its `{name}` is {got}: expected one above 0"));
+                "failed"
+            }
+        },
         Check::Probes => {
             let problems = probes(outcome, false);
             let checked = if problems.is_empty() {
@@ -470,6 +513,25 @@ fn check(
                 }
             }
         }
+    }
+}
+
+/// Adds to what `ran` failed what of its run the providers that `settings` reach still hold, as
+/// [`left`] finds it, each of which `./pumpkin cancel` in `repo` removes.
+fn leftovers(cargo: &Cargo, settings: &Settings, repo: &Path, ran: &mut Ran) {
+    let Some(id) = &ran.id else {
+        return;
+    };
+    match left(cargo, settings, id) {
+        Ok(left) if left.is_empty() => {}
+        Ok(left) => ran.failed.push(format!(
+            "left after the run: {}; remove it with `./pumpkin cancel {id}` in {}",
+            left.join(", "),
+            repo.display()
+        )),
+        Err(error) => ran
+            .failed
+            .push(format!("finding what is left of run {id} failed: {error}")),
     }
 }
 

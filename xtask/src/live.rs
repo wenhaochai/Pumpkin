@@ -99,17 +99,7 @@ pub(crate) fn smoke(
         Provider::Ec2 => "cargo xtask live ec2",
         Provider::Modal => "cargo xtask live modal",
     };
-    let home =
-        env::var_os("HOME").ok_or("HOME is unset: set it, as the configuration is below it")?;
-    let config = Path::new(&home).join(".config/pumpkin/pumpkin.toml");
-    let text = fs::read_to_string(&config).map_err(|error| {
-        format!(
-            "{} can't be read ({error}): write the configuration that names the controller \
-             there, as the README says",
-            config.display()
-        )
-    })?;
-    let settings = Settings::parse(&text, &config, provider, gpu_model)?;
+    let settings = settings(None, Some(provider), gpu_model)?;
     reached(cargo, &settings)?;
     let (branch, commit) = head(cargo)?;
     let repo = task_repository(cargo)?;
@@ -118,8 +108,8 @@ pub(crate) fn smoke(
     }
     let mut run = pumpkin(&repo);
     run.args(["run", "--wait"]);
-    if let Some(modal) = &settings.modal {
-        run.args(["--arg", &format!("gpu_model={}", modal.gpu_model)]);
+    if let Some(gpu_model) = &settings.gpu_model {
+        run.args(["--arg", &format!("gpu_model={gpu_model}")]);
     }
     run.arg("smoke/task.star");
     eprintln!("xtask: running examples/smoke at {commit} ({branch}) through the controller");
@@ -131,7 +121,7 @@ pub(crate) fn smoke(
         ));
     }
     let record = repo.join(".pumpkin/runs").join(&id);
-    failed.extend(checked(&record, settings.modal.is_some()));
+    failed.extend(checked(&record, settings.gpu_model.is_some()));
     let left = left(cargo, &settings, &id)?;
     if !left.is_empty() {
         failed.push(format!("left after the run: {}", left.join(", ")));
@@ -156,6 +146,31 @@ pub(crate) fn smoke(
     Err(format!("{}: fix it, and run `{again}` again", failed.join("; ")).into())
 }
 
+/// The settings of live runs on `provider`, or on any of the controller's, that the configuration
+/// at `config`, or else `~/.config/pumpkin/pumpkin.toml`, gives, as [`Settings::parse`] reads
+/// them.
+fn settings(
+    config: Option<&Path>,
+    provider: Option<Provider>,
+    gpu_model: Option<&str>,
+) -> Result<Settings> {
+    let config = if let Some(config) = config {
+        config.to_owned()
+    } else {
+        let home =
+            env::var_os("HOME").ok_or("HOME is unset: set it, as the configuration is below it")?;
+        Path::new(&home).join(".config/pumpkin/pumpkin.toml")
+    };
+    let text = fs::read_to_string(&config).map_err(|error| {
+        format!(
+            "{} can't be read ({error}): write the configuration that names the controller \
+             there, as the README says",
+            config.display()
+        )
+    })?;
+    Settings::parse(&text, &config, provider, gpu_model)
+}
+
 /// The longest a lost smoke run's sandboxes may take to end by themselves, from when its job is
 /// killed, after the run's start.
 // The run's hard end is at most 94 minutes after its start: three of an EC2 sandbox's startups (29
@@ -175,10 +190,7 @@ fn lost(cargo: &Cargo, settings: &Settings, repo: &Path, again: &str) -> Result<
     };
     // The agent holds a lease of each grant, so that the run is lost with its sandboxes in use.
     let mut args = vec!["run", "--arg", "hold=true", "--arg", "deadline_seconds=120"];
-    let gpu = settings
-        .modal
-        .as_ref()
-        .map(|modal| format!("gpu_model={}", modal.gpu_model));
+    let gpu = (settings.gpu_model.as_ref()).map(|gpu_model| format!("gpu_model={gpu_model}"));
     if let Some(gpu) = &gpu {
         args.extend(["--arg", gpu]);
     }
@@ -630,10 +642,6 @@ fn left(cargo: &Cargo, settings: &Settings, id: &str) -> Result<Vec<String>> {
             .unwrap_or_default()
     }) {
         let state = instance["State"]["Name"].as_str().unwrap_or_default();
-        println!(
-            "EC2 instance {} of the run: {state}",
-            instance["InstanceId"]
-        );
         if state != "terminated" {
             left.push(format!("EC2 instance {} ({state})", instance["InstanceId"]));
         }

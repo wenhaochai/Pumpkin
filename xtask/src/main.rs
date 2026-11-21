@@ -80,10 +80,10 @@ mod flags {
             /// the Docker context that `PUMPKIN_DOCKER_CONTEXT` names, or `default`; and, at a
             /// cost, through the configuration's controller, from a task repository below the
             /// target directory: `ec2` and `modal`, a run of `examples/smoke` on that provider,
-            /// whose probes must pass, with nothing of it left on EC2, EventBridge Scheduler or
-            /// Modal, which `pumpkin cancel` then removes; and `examples`, about $10 over two
-            /// hours, a run of each shipped example on real models, whose checker must pass. Each
-            /// run must end with its sandboxes deleted.
+            /// whose probes must pass, and which `pumpkin cancel` removes if it leaves anything;
+            /// and `examples`, about $10 over two hours, a run of each shipped example on real
+            /// models, whose checker must pass. Each run must end with its sandboxes deleted, and
+            /// nothing of it left on EC2, EventBridge Scheduler or Modal.
             cmd live {
                 /// `docker`, `ec2`, `modal` or `examples`.
                 required target: String

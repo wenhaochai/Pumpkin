@@ -29,25 +29,32 @@ fn settings() {
     let a100 = Some("NVIDIA A100-SXM4-40GB");
     let without_modal = CONFIG.split("[controller.modal]").next().unwrap();
     let cases = [
-        ("ec2", CONFIG, Provider::Ec2, None),
-        ("modal", CONFIG, Provider::Modal, a100),
-        ("modal without a GPU", CONFIG, Provider::Modal, None),
+        ("ec2", CONFIG, Some(Provider::Ec2), None),
+        ("modal", CONFIG, Some(Provider::Modal), a100),
+        ("modal without a GPU", CONFIG, Some(Provider::Modal), None),
         (
             "modal with a GPU no class has",
             CONFIG,
-            Provider::Modal,
+            Some(Provider::Modal),
             Some("NVIDIA B200"),
         ),
         (
             "modal without [controller.modal]",
             without_modal,
-            Provider::Modal,
+            Some(Provider::Modal),
             a100,
+        ),
+        ("any provider", CONFIG, None, None),
+        (
+            "any provider without [controller.modal]",
+            without_modal,
+            None,
+            None,
         ),
         (
             "no [controller]",
             "[providers.local.docker]\n",
-            Provider::Ec2,
+            Some(Provider::Ec2),
             None,
         ),
     ];
@@ -62,11 +69,13 @@ fn settings() {
         })
         .collect();
     expect![[r#"
-        ec2: Settings { name: "alice", region: "us-west-1", modal: None }
-        modal: Settings { name: "alice", region: "us-west-1", modal: Some(Modal { profile: "alice", config: Some("/home/alice/.config/pumpkin/modal.toml"), gpu_model: "NVIDIA A100-SXM4-40GB" }) }
+        ec2: Settings { name: "alice", region: "us-west-1", modal: None, gpu_model: None }
+        modal: Settings { name: "alice", region: "us-west-1", modal: Some(Modal { profile: "alice", config: Some("/home/alice/.config/pumpkin/modal.toml") }), gpu_model: Some("NVIDIA A100-SXM4-40GB") }
         modal without a GPU: a live run on Modal needs the model of a GPU that a class of `[controller.modal]` has, the cheapest best: give one of `NVIDIA A100-SXM4-40GB`, `NVIDIA H100 80GB HBM3` with `--gpu-model`
         modal with a GPU no class has: no class of /home/alice/.config/pumpkin/pumpkin.toml's `[controller.modal]` has the GPU `NVIDIA B200`: give one of `NVIDIA A100-SXM4-40GB`, `NVIDIA H100 80GB HBM3`
         modal without [controller.modal]: /home/alice/.config/pumpkin/pumpkin.toml names no `[controller.modal]`, which a live run on Modal needs: name the workspace's profile and classes there, as the README says
+        any provider: Settings { name: "alice", region: "us-west-1", modal: Some(Modal { profile: "alice", config: Some("/home/alice/.config/pumpkin/modal.toml") }), gpu_model: None }
+        any provider without [controller.modal]: Settings { name: "alice", region: "us-west-1", modal: None, gpu_model: None }
         no [controller]: /home/alice/.config/pumpkin/pumpkin.toml names no `[controller]`, which a live run goes through: name the one `deploy/aws` made, as the README says"#]].assert_eq(&lines.join("\n"));
 }
 
