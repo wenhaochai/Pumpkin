@@ -3,8 +3,15 @@
 //! both empty outside a git checkout of Pumpkin's repository, or if git can't say.
 
 use std::path::Path;
+use std::time::Duration;
 
-use stdx::process::{Environment, command};
+use stdx::process::{self, Bound, Echo, Environment, Run, command, printed};
+
+// Past this bound, git is taken as unable to say, as when it fails. It answers at once, so the
+// bound ends only a git that hangs, and it is TigerBeetle's default for each command that its
+// scripts run:
+// https://github.com/tigerbeetle/tigerbeetle/blob/3cd7cf4799f65c81ffbc36eda788b8b26fd7da72/src/shell.zig#L462-L469
+const GIT_TIMEOUT: Duration = Duration::from_mins(10);
 
 fn main() {
     // This crate is `crates/runtime`, below the root of the checkout.
@@ -37,14 +44,11 @@ fn main() {
     println!("cargo::rustc-env=PUMPKIN_COMMIT_DATE={date}");
 }
 
-/// What git prints with `args` in `root`, trimmed, if it succeeds.
+/// What git prints with `args` in `root`, trimmed, if it succeeds within `GIT_TIMEOUT`.
 fn git(root: &Path, args: &[&str]) -> Option<String> {
-    let output = command("git", Environment::Inherited)
-        .arg("-C")
-        .arg(root)
-        .args(args)
-        .output()
-        .ok()?;
-    let text = String::from_utf8(output.stdout).ok()?;
-    output.status.success().then(|| text.trim().to_owned())
+    let mut git = command("git", Environment::Inherited);
+    git.arg("-C").arg(root).args(args);
+    let how = Run::new(Bound::Within(GIT_TIMEOUT), Echo::Silent);
+    let text = printed(process::run(&mut git, how).ok()?).ok()?;
+    Some(text.trim().to_owned())
 }

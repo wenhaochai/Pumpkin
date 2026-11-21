@@ -19,7 +19,7 @@ use schema::sandbox::{
     FromSandbox, HELLO_TIMEOUT, Hello, HelloReply, MAX_HELLO_BYTES, RegistrationGrant,
     SANDBOXD_GRANT, ToSandbox, read_hello_reply,
 };
-use stdx::process::Environment;
+use stdx::process::{self, Bound, Echo, Environment, Run, printed};
 use stdx::{Context, Deadline, unpoisoned};
 
 use crate::commands::Commands;
@@ -106,14 +106,13 @@ pub(crate) fn serve(gateway: &Gateway, serve_ops: bool, serve_model: bool) -> Re
 /// The sandbox's GPUs, each by its model, as `nvidia-smi` names them within `GPUS_TIMEOUT`;
 /// none where it isn't on `PATH`, fails, or names none.
 fn gpus() -> Option<Vec<GpuModel>> {
-    let mut nvidia_smi = stdx::process::command("nvidia-smi", Environment::Inherited);
+    let mut nvidia_smi = process::command("nvidia-smi", Environment::Inherited);
     nvidia_smi
         .args(["--query-gpu=name", "--format=csv,noheader"])
         // It runs as a command would, which has no grant.
         .env_remove(SANDBOXD_GRANT);
-    let output = stdx::process::output(&mut nvidia_smi, Deadline::after(GPUS_TIMEOUT));
-    let output = output.ok()?.filter(|output| output.status.success())?;
-    let names = String::from_utf8(output.stdout).ok()?;
+    let how = Run::new(Bound::Within(GPUS_TIMEOUT), Echo::Silent);
+    let names = printed(process::run(&mut nvidia_smi, how).ok()?).ok()?;
     let gpus = names
         .lines()
         .map(|name| GpuModel::try_from(name.trim().to_owned()).ok());
